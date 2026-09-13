@@ -531,16 +531,24 @@ which switches its native flagged-entry scan off, rather than as
   (or (treesit-parent-until (treesit-node-at (point)) 'transaction t)
       (user-error "Not in a transaction")))
 
-(defun beancount-ts--set-marker (txn flag)
-  "Rewrite the marker of transaction node TXN to FLAG.
+(defun beancount-ts--marker-bounds (txn)
+  "Return (BEG . END) of the marker of transaction node TXN.
 The marker is the `txn' field, which holds `*', `!' or the word `txn'."
   (let ((marker (treesit-node-child-by-field-name txn "txn")))
     (unless marker
       (user-error "Could not find transaction flag"))
-    (save-excursion
-      (goto-char (treesit-node-start marker))
-      (delete-region (point) (treesit-node-end marker))
-      (insert flag))))
+    (cons (treesit-node-start marker) (treesit-node-end marker))))
+
+(defun beancount-ts--set-marker (txn flag)
+  "Rewrite the marker of transaction node TXN to FLAG."
+  (beancount-ts--replace-region (beancount-ts--marker-bounds txn) flag))
+
+(defun beancount-ts--replace-region (bounds text)
+  "Replace the text between BOUNDS, a (BEG . END) cons, with TEXT."
+  (save-excursion
+    (goto-char (car bounds))
+    (delete-region (car bounds) (cdr bounds))
+    (insert text)))
 
 ;;;###autoload
 (defun beancount-ts-transaction-clear (&optional arg)
@@ -556,9 +564,11 @@ with `beancount-ts-sort'."
                                  (region-beginning) (region-end)))))
           (unless txns
             (user-error "No transactions in the selection"))
-          ;; Last first, so earlier nodes keep their positions.
-          (dolist (txn (reverse txns))
-            (beancount-ts--set-marker txn flag))
+          ;; Positions before any edit, since a node is not safe to ask
+          ;; once the buffer changes under it; then last first, so the
+          ;; earlier positions stay valid.
+          (dolist (bounds (nreverse (mapcar #'beancount-ts--marker-bounds txns)))
+            (beancount-ts--replace-region bounds flag))
           (message "Marked %d transaction%s %s" (length txns)
                    (if (= 1 (length txns)) "" "s") flag))
       (beancount-ts--set-marker (beancount-ts--transaction-at-point) flag))))

@@ -555,6 +555,23 @@ a transaction and a comment: everything the sorter must not lose.")
     (should (string-match-p "^2024-01-04 \\* \"four\"" (buffer-string)))
     (should (string-match-p "^2024-01-03 \\* \"three\"" (buffer-string)))))
 
+(ert-deftest beancount-ts-clear/region-survives-a-reparse-between-edits ()
+  "Clearing a selection must not hold tree-sitter nodes across its edits.
+A hook that touches the tree after each change makes every node from
+before the first edit outdated; the positions have to be taken first."
+  (beancount-ts-cmd-test--in-ledger
+    (add-hook 'after-change-functions
+              (lambda (&rest _) (treesit-buffer-root-node 'beancount))
+              nil t)
+    (transient-mark-mode 1)
+    (set-mark (point-min))
+    (goto-char (point-max))
+    (activate-mark)
+    (beancount-ts-transaction-clear)
+    (should (string-match-p "^2024-01-03 \\* \"three\"" (buffer-string)))
+    (should (string-match-p "^2024-01-02 \\* \"two\"" (buffer-string)))
+    (should (string-match-p "^2024-01-04 \\* \"four\"" (buffer-string)))))
+
 ;;; Cloning
 
 (ert-deftest beancount-ts-clone/separates-copy-from-neighbours ()
