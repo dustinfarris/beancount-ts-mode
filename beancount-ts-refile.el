@@ -47,16 +47,38 @@ two cannot disagree."
          (s2 (replace-regexp-in-string "\\([A-Z]+\\)\\([A-Z][a-z]\\)" "\\1-\\2" s1)))
     (downcase s2)))
 
+(defcustom beancount-ts-refile-entities nil
+  "Account components in slot two that name a business entity.
+An entity is hoisted to the leading path component, so with
+\"Consulting\" listed here \"Liabilities:Consulting:Chase:InkVisa\"
+resolves under \"consulting/liabilities/chase/\" rather than
+\"liabilities/consulting/chase/\"."
+  :type '(repeat string)
+  :group 'beancount-ts)
+
+(defcustom beancount-ts-refile-ignored-account-prefixes
+  '("Expenses:" "Equity:")
+  "Account prefixes that never decide where an entry is refiled.
+An entry is filed by the accounts it names; the ones matching a prefix
+here are left out of that inference, and out of the prompt default."
+  :type '(repeat string)
+  :group 'beancount-ts)
+
+(defun beancount-ts--ignored-account-p (account)
+  "Return non-nil when ACCOUNT starts with an ignored prefix."
+  (seq-some (lambda (prefix) (string-prefix-p prefix account))
+            beancount-ts-refile-ignored-account-prefixes))
+
 (defun beancount-ts--account-to-path-guess (account)
   "Derive a best-guess journal-relative file path from ACCOUNT.
 ACCOUNT is like \"Liabilities:CapitalOne:QuicksilverVisa\".
-Returns a string like \"liabilities/capitalone/quicksilver-visa\"."
+Returns a string like \"liabilities/capitalone/quicksilver-visa\".
+A second component listed in `beancount-ts-refile-entities' leads."
   (let* ((parts (split-string account ":"))
-         (business-entities '("Consulting" "Rentals" "Salcedo"))
          (account-type (car parts))
          (rest (cdr parts))
          path-parts)
-    (if (and rest (member (car rest) business-entities))
+    (if (and rest (member (car rest) beancount-ts-refile-entities))
         (let ((entity (car rest))
               (remaining (cdr rest)))
           (setq path-parts
@@ -145,12 +167,11 @@ no account."
       (nreverse accounts))))
 
 (defun beancount-ts--primary-account (entry)
-  "Extract the primary account from ENTRY.
-Skip Expenses: and Assets:Transfer: accounts.
-Return the first Assets:, Liabilities:, or Income: account."
+  "Extract the primary account from ENTRY, for the prompt default.
+Return the first Assets:, Liabilities:, or Income: account that
+`beancount-ts-refile-ignored-account-prefixes' does not exclude."
   (seq-find (lambda (text)
-              (and (not (string-prefix-p "Expenses:" text))
-                   (not (string-prefix-p "Assets:Transfer:" text))
+              (and (not (beancount-ts--ignored-account-p text))
                    (or (string-prefix-p "Assets:" text)
                        (string-prefix-p "Liabilities:" text)
                        (string-prefix-p "Income:" text))))
@@ -158,11 +179,9 @@ Return the first Assets:, Liabilities:, or Income: account."
 
 (defun beancount-ts--relevant-accounts (entry)
   "Get accounts from ENTRY suitable for refile target inference.
-Skip Expenses:, Equity:, and Assets:Transfer: accounts."
-  (seq-remove (lambda (text)
-                (or (string-prefix-p "Expenses:" text)
-                    (string-prefix-p "Equity:" text)
-                    (string-prefix-p "Assets:Transfer:" text)))
+Accounts matching `beancount-ts-refile-ignored-account-prefixes' are
+dropped."
+  (seq-remove #'beancount-ts--ignored-account-p
               (beancount-ts--entry-accounts entry)))
 
 (defun beancount-ts--infer-target-file (entry all-files)

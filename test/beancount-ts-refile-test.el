@@ -31,10 +31,18 @@
                  "liabilities/chase/prime-visa")))
 
 (ert-deftest beancount-ts-refile/path-guess-hoists-business-entity ()
-  "A business entity in slot two becomes the leading path component."
-  (should (equal (beancount-ts--account-to-path-guess
-                  "Liabilities:Consulting:CapitalOne:SparkVisa")
-                 "consulting/liabilities/capital-one/spark-visa")))
+  "A configured entity in slot two becomes the leading path component."
+  (let ((beancount-ts-refile-entities '("Consulting")))
+    (should (equal (beancount-ts--account-to-path-guess
+                    "Liabilities:Consulting:CapitalOne:SparkVisa")
+                   "consulting/liabilities/capital-one/spark-visa"))))
+
+(ert-deftest beancount-ts-refile/path-guess-without-entities-keeps-order ()
+  "With no entities configured, slot two is an ordinary path component."
+  (let ((beancount-ts-refile-entities nil))
+    (should (equal (beancount-ts--account-to-path-guess
+                    "Liabilities:Consulting:CapitalOne:SparkVisa")
+                   "liabilities/consulting/capital-one/spark-visa"))))
 
 ;;; beancount-ts--find-ancestor-file
 
@@ -204,6 +212,21 @@ so the refile must fail towards a duplicate, never towards a loss."
                            (beancount-ts--collect-entries-in-region
                             (point-min) (point-max)))
                    '("transaction" "balance" "price")))))
+
+(ert-deftest beancount-ts-refile/relevant-accounts-honour-ignored-prefixes ()
+  "Every prefix in the ignore list is skipped, and only those."
+  (beancount-ts-refile-test--in-ledger
+    (let ((entry (beancount-ts-refile-test--entry-at "SAFEWAY"))
+          (beancount-ts-refile-ignored-account-prefixes '("Liabilities:")))
+      (should (equal (beancount-ts--relevant-accounts entry)
+                     '("Expenses:Food:Groceries"))))))
+
+(ert-deftest beancount-ts-refile/relevant-accounts-default-skips-expenses ()
+  "The default ignore list drops Expenses, so the card decides the target."
+  (beancount-ts-refile-test--in-ledger
+    (let ((entry (beancount-ts-refile-test--entry-at "SAFEWAY")))
+      (should (equal (beancount-ts--relevant-accounts entry)
+                     '("Liabilities:CapitalOne:QuicksilverVisa"))))))
 
 (ert-deftest beancount-ts-refile/relevant-accounts-of-balance ()
   "A balance directive contributes its own account, not a posting's."
