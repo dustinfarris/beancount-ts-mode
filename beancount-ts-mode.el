@@ -443,6 +443,7 @@ account, and transactions by date, payee and narration."
 
 ;;; Mode
 
+;;;###autoload
 (define-derived-mode beancount-ts-mode prog-mode "Beancount"
   "Major mode for editing Beancount files with tree-sitter.
 
@@ -485,7 +486,9 @@ account, and transactions by date, payee and narration."
 
 (derived-mode-add-parents 'beancount-ts-mode '(beancount-mode))
 
+;;;###autoload
 (add-to-list 'auto-mode-alist '("\\.beancount\\'" . beancount-ts-mode))
+;;;###autoload
 (add-to-list 'auto-mode-alist '("\\.bean\\'" . beancount-ts-mode))
 
 ;;; Navigation

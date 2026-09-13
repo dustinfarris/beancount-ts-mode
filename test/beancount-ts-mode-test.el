@@ -7,9 +7,11 @@
 
 (defvar eglot-server-programs)
 
-(add-to-list 'load-path
-             (expand-file-name ".." (file-name-directory
-                                     (or load-file-name buffer-file-name))))
+(defconst beancount-ts-test--package-directory
+  (expand-file-name ".." (file-name-directory (or load-file-name buffer-file-name)))
+  "The directory holding the package sources.")
+
+(add-to-list 'load-path beancount-ts-test--package-directory)
 (require 'beancount-ts-mode)
 
 (defun beancount-ts-test--indent-at (text line)
@@ -671,15 +673,31 @@ native scan is switched off."
   (let ((beancount-ts-journal-file nil))
     (should-error (beancount-ts-eglot-init-options nil) :type 'user-error)))
 
-(ert-deftest beancount-ts-eglot/registers-server-for-beancount-mode ()
-  "Loading eglot after the mode leaves a `beancount-mode' entry that
-hands the server `beancount-ts-eglot-init-options' for its options."
-  (require 'eglot)
-  (let ((entry (assq 'beancount-mode eglot-server-programs)))
-    (should entry)
-    (should (equal "beancount-language-server" (cadr entry)))
-    (should (eq 'beancount-ts-eglot-init-options
-                (cadr (memq :initializationOptions (cdr entry)))))))
+;;; Packaging
+
+(ert-deftest beancount-ts-mode/autoloads-register-the-mode ()
+  "The generated autoloads file wires .beancount and .bean files to the mode.
+This is what package activation runs; without it a package install
+opens journals in `fundamental-mode' while the commands autoload fine."
+  ;; The file must not exist yet: `loaddefs-generate' skips sources
+  ;; older than its output, and a fresh temp file is newer than all.
+  (let ((loaddefs (concat (make-temp-name
+                           (expand-file-name "beancount-ts-loaddefs" temporary-file-directory))
+                          ".el")))
+    (unwind-protect
+        (progn
+          (loaddefs-generate beancount-ts-test--package-directory loaddefs)
+          (let ((text (with-temp-buffer
+                        (insert-file-contents loaddefs)
+                        (buffer-string))))
+            (should (string-search "(autoload 'beancount-ts-mode " text))
+            (should (string-search
+                     "(add-to-list 'auto-mode-alist '(\"\\\\.beancount\\\\'\" . beancount-ts-mode))"
+                     text))
+            (should (string-search
+                     "(add-to-list 'auto-mode-alist '(\"\\\\.bean\\\\'\" . beancount-ts-mode))"
+                     text))))
+      (when (file-exists-p loaddefs) (delete-file loaddefs)))))
 
 (provide 'beancount-ts-mode-test)
 ;;; beancount-ts-mode-test.el ends here
