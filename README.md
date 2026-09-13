@@ -69,25 +69,25 @@ The mode binds no keys of its own. A starting point:
 
 ### LSP
 
-Loading the mode adds a `beancount-mode` entry to `eglot-server-programs` that starts `beancount-language-server --stdio` and hands it `beancount-ts-journal-file` as `journal_file` and `beancount-ts-diagnostic-flags` as `diagnostic_flags`. Start it with `M-x eglot`.
+Loading the mode adds a `beancount-ts-mode` entry to `eglot-server-programs` that starts `beancount-language-server --stdio` and hands it `beancount-ts-journal-file` as `journal_file` and `beancount-ts-diagnostic-flags` as `diagnostic_flags`. Start it with `M-x eglot`.
 
 The server's bean-check pass also warns on `!`, and the two lists are appended rather than merged ([polarmutex/beancount-language-server#825](https://github.com/polarmutex/beancount-language-server/issues/825)); set `beancount-ts-diagnostic-flags` to a different flag, or to `nil`, if you see each pending transaction reported twice.
 
 ## Commands
 
-| Command                                     | Description                                                              |
-|---------------------------------------------|--------------------------------------------------------------------------|
-| `beancount-ts-next-transaction`             | Next transaction, skipping other directives; takes a count               |
-| `beancount-ts-prev-transaction`             | Previous transaction                                                     |
-| `beancount-ts-next-uncleared-transaction`   | Next transaction not marked `*`                                          |
-| `beancount-ts-transaction-clear`            | Mark the transaction at point, or every one in the region, `*`; with a prefix argument `!` |
-| `beancount-ts-transaction-clear-and-next`   | Mark cleared, then jump to the next uncleared transaction                |
-| `beancount-ts-clone-transaction`            | Insert a copy of the transaction at point below it                       |
-| `beancount-ts-sort`                         | Sort entries by date: the region if active, else the whole buffer        |
-| `beancount-ts-sort-buffer`, `beancount-ts-sort-region` | The two halves of the above                                   |
-| `beancount-ts-refile-transaction`           | Refile the entry at point, prompting when the target is ambiguous; with a region, refile every entry whose target is clear |
-| `beancount-ts-refile-buffer`                | Refile every entry in the buffer whose target is clear                   |
-| `beancount-ts-undo-last-refile`             | Undo the last refile in the source and every target buffer               |
+| Command                                                | Description                                                                                                                |
+|--------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------|
+| `beancount-ts-next-transaction`                        | Next transaction, skipping other directives; takes a count                                                                 |
+| `beancount-ts-prev-transaction`                        | Previous transaction                                                                                                       |
+| `beancount-ts-next-uncleared-transaction`              | Next transaction not marked `*`                                                                                            |
+| `beancount-ts-transaction-clear`                       | Mark the transaction at point, or every one in the region, `*`; with a prefix argument `!`                                 |
+| `beancount-ts-transaction-clear-and-next`              | Mark cleared, then jump to the next uncleared transaction                                                                  |
+| `beancount-ts-clone-transaction`                       | Insert a copy of the transaction at point below it                                                                         |
+| `beancount-ts-sort`                                    | Sort entries by date: the region if active, else the whole buffer                                                          |
+| `beancount-ts-sort-buffer`, `beancount-ts-sort-region` | The two halves of the above                                                                                                |
+| `beancount-ts-refile-transaction`                      | Refile the entry at point, prompting when the target is ambiguous; with a region, refile every entry whose target is clear |
+| `beancount-ts-refile-buffer`                           | Refile every entry in the buffer whose target is clear                                                                     |
+| `beancount-ts-undo-last-refile`                        | Put the last refile's entries back in the source and out of every target, keeping edits made since                         |
 
 Entry motion is the stock defun vocabulary: `C-M-a`, `C-M-e`, `C-M-h`, `narrow-to-defun`. Postings are sentences, so `M-e` steps through them. `beancount-ts-bounds-of-transaction` and `beancount-ts-inner-of-transaction` return the bounds of the transaction at point and of its postings, for building text objects in Meow, evil or the like.
 
@@ -101,21 +101,21 @@ Target files are saved before the source, so an interrupted refile fails towards
 
 ## Faces
 
-| Face                            | Inherits                        | Used for                          |
-|---------------------------------|---------------------------------|-----------------------------------|
-| `beancount-ts-date`             | `font-lock-number-face`         | Dates                             |
-| `beancount-ts-account`          | `font-lock-builtin-face`        | Root account component            |
-| `beancount-ts-account-sub`      | `default`                       | Sub-account components            |
-| `beancount-ts-account-separator`| `font-lock-comment-face`        | Colons between components         |
-| `beancount-ts-amount`           | `font-lock-number-face`         | Numbers                           |
-| `beancount-ts-currency`         | `font-lock-type-face`           | Currencies                        |
-| `beancount-ts-directive`        | `font-lock-keyword-face`        | Directive keywords                |
-| `beancount-ts-tag`              | `font-lock-preprocessor-face`   | Tags                              |
-| `beancount-ts-link`             | `font-lock-preprocessor-face`   | Links                             |
-| `beancount-ts-string`           | `font-lock-string-face`         | Strings, payees, narrations       |
-| `beancount-ts-metadata-key`     | `font-lock-property-name-face`  | Metadata keys                     |
-| `beancount-ts-flag-pending`     | `font-lock-warning-face`        | `!` and other flags               |
-| `beancount-ts-flag-cleared`     | `success`                       | `*`                               |
+| Face                             | Inherits                       | Used for                    |
+|----------------------------------|--------------------------------|-----------------------------|
+| `beancount-ts-date`              | `font-lock-number-face`        | Dates                       |
+| `beancount-ts-account`           | `font-lock-builtin-face`       | Root account component      |
+| `beancount-ts-account-sub`       | `default`                      | Sub-account components      |
+| `beancount-ts-account-separator` | `font-lock-comment-face`       | Colons between components   |
+| `beancount-ts-amount`            | `font-lock-number-face`        | Numbers                     |
+| `beancount-ts-currency`          | `font-lock-type-face`          | Currencies                  |
+| `beancount-ts-directive`         | `font-lock-keyword-face`       | Directive keywords          |
+| `beancount-ts-tag`               | `font-lock-preprocessor-face`  | Tags                        |
+| `beancount-ts-link`              | `font-lock-preprocessor-face`  | Links                       |
+| `beancount-ts-string`            | `font-lock-string-face`        | Strings, payees, narrations |
+| `beancount-ts-metadata-key`      | `font-lock-property-name-face` | Metadata keys               |
+| `beancount-ts-flag-pending`      | `font-lock-warning-face`       | `!` and other flags         |
+| `beancount-ts-flag-cleared`      | `success`                      | `*`                         |
 
 ## Development
 
