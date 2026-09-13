@@ -344,8 +344,7 @@ loading this file needs no grammar.")
 ;; predicate here insists on a named node.
 (defun beancount-ts-transaction-marker (node)
   "Return the marker text of transaction NODE: \"*\", \"!\", \"txn\" or a flag."
-  (when-let* ((marker (treesit-node-child-by-field-name node "txn")))
-    (treesit-node-text marker t)))
+  (beancount-ts--field-text node "txn"))
 
 (defun beancount-ts--uncleared-p (node)
   "Return non-nil when transaction NODE is not marked cleared (*)."
@@ -668,8 +667,7 @@ read before any rewrite, so callers may edit freely afterwards."
                                      (cons (treesit-node-start n) (treesit-node-end n)))
                                    dated))
                     (sorted (sort (mapcar (lambda (n)
-                                            (cons (treesit-node-text
-                                                   (treesit-node-child-by-field-name n "date") t)
+                                            (cons (beancount-ts--field-text n "date")
                                                   (treesit-node-text n t)))
                                           dated)
                                   (lambda (a b) (string< (car a) (car b))))))

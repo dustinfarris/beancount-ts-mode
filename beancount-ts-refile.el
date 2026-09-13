@@ -194,8 +194,8 @@ A transaction carries its accounts on postings; a balance directive
 carries one directly as its `account' field.  Other entry kinds name
 no account."
   (if (equal (treesit-node-type entry) "balance")
-      (when-let* ((account (treesit-node-child-by-field-name entry "account")))
-        (list (treesit-node-text account t)))
+      (when-let* ((account (beancount-ts--field-text entry "account")))
+        (list account))
     (let (accounts)
       (dolist (child (treesit-node-children entry))
         (when (equal (treesit-node-type child) "posting")
