@@ -303,9 +303,16 @@ Preserves point when it is past the current indentation."
 ;; nested under org-style `*' headings, which the grammar wraps in
 ;; `section' nodes.
 
+(defconst beancount-ts--scope-boundary-types
+  '("pushtag" "poptag" "pushmeta" "popmeta")
+  "Entry node types that open or close a tag or metadata scope.
+Every entry between a push and its pop carries that tag or metadata,
+so a sort must not move an entry across one of these lines.")
+
 (defconst beancount-ts-entry-node-types
-  '("transaction" "balance" "open" "close" "commodity" "pad" "event"
-    "query" "note" "document" "custom" "option" "include" "plugin" "price")
+  (append '("transaction" "balance" "open" "close" "commodity" "pad" "event"
+            "query" "note" "document" "custom" "option" "include" "plugin" "price")
+          beancount-ts--scope-boundary-types)
   "Tree-sitter node types that form a top-level beancount entry.")
 
 (defconst beancount-ts--entry-query
@@ -604,24 +611,43 @@ blank lines, org-style headings -- stays exactly where it is.  So an
 entry can move across a heading, but no text is ever dropped.
 Undated entries (option, include, ...) hold their slot."
   (interactive "r")
-  (let* ((entries (beancount-ts-entries-in-region start end))
-         (dated (seq-filter (lambda (n) (treesit-node-child-by-field-name n "date"))
-                            entries))
-         (slots (mapcar (lambda (n) (cons (treesit-node-start n) (treesit-node-end n)))
-                        dated))
-         (sorted (sort (mapcar (lambda (n)
-                                 (cons (treesit-node-text
-                                        (treesit-node-child-by-field-name n "date") t)
-                                       (treesit-node-text n t)))
-                               dated)
-                       (lambda (a b) (string< (car a) (car b))))))
+  (let ((rewrites (beancount-ts--sort-rewrites
+                   (beancount-ts-entries-in-region start end))))
     ;; Rewrite from the last slot backwards so earlier positions stay valid.
     (save-excursion
-      (cl-loop for slot in (reverse slots)
-               for text in (reverse (mapcar #'cdr sorted))
-               do (goto-char (car slot))
-               (delete-region (car slot) (cdr slot))
-               (insert text)))))
+      (pcase-dolist (`((,beg . ,end) . ,text) (reverse rewrites))
+        (goto-char beg)
+        (delete-region beg end)
+        (insert text)))))
+
+(defun beancount-ts--sort-rewrites (entries)
+  "Return the rewrites that sort the dated ENTRIES by date, in buffer order.
+Each is ((BEG . END) . TEXT): the slot an entry occupies now and the
+text of the entry that belongs there.  A pushtag, poptag, pushmeta or
+popmeta line splits the entries into stretches that are sorted
+independently, so no entry leaves or enters a scope.  Positions are
+read before any rewrite, so callers may edit freely afterwards."
+  (let (stretches stretch)
+    (dolist (node entries)
+      (cond ((member (treesit-node-type node) beancount-ts--scope-boundary-types)
+             (when stretch (push (nreverse stretch) stretches))
+             (setq stretch nil))
+            ((treesit-node-child-by-field-name node "date")
+             (push node stretch))))
+    (when stretch (push (nreverse stretch) stretches))
+    (mapcan (lambda (dated)
+              (let ((slots (mapcar (lambda (n)
+                                     (cons (treesit-node-start n) (treesit-node-end n)))
+                                   dated))
+                    (sorted (sort (mapcar (lambda (n)
+                                            (cons (treesit-node-text
+                                                   (treesit-node-child-by-field-name n "date") t)
+                                                  (treesit-node-text n t)))
+                                          dated)
+                                  (lambda (a b) (string< (car a) (car b))))))
+                (seq-mapn (lambda (slot entry) (cons slot (cdr entry)))
+                          slots sorted)))
+            (nreverse stretches))))
 
 ;;; eglot
 

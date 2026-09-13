@@ -571,6 +571,55 @@ a transaction and a comment: everything the sorter must not lose.")
                    (buffer-string)))))
 
 
+;;; Tag and metadata scopes
+
+(defconst beancount-ts-scope-test--ledger
+  (concat "2024-02-01 * \"before\"\n"
+          "  Assets:Cash  1 USD\n"
+          "  Expenses:X\n"
+          "pushtag #trip\n"
+          "2024-03-02 * \"hotel\"\n"
+          "  Assets:Cash  1 USD\n"
+          "  Expenses:X\n"
+          "2024-03-01 * \"flight\"\n"
+          "  Assets:Cash  1 USD\n"
+          "  Expenses:X\n"
+          "poptag #trip\n"
+          "\n"
+          "2024-01-01 * \"groceries\"\n"
+          "  Assets:Cash  1 USD\n"
+          "  Expenses:X\n")
+  "Out-of-order entries inside and around a pushtag block.")
+
+(ert-deftest beancount-ts-nav/push-and-pop-directives-are-entries ()
+  "pushtag, poptag, pushmeta and popmeta lines are entries too, so
+motion stops on them and a sort knows where a scope begins and ends."
+  (skip-unless (treesit-ready-p 'beancount t))
+  (with-temp-buffer
+    (insert beancount-ts-scope-test--ledger)
+    (beancount-ts-mode)
+    (should (equal '("transaction" "pushtag" "transaction" "transaction"
+                     "poptag" "transaction")
+                   (mapcar #'treesit-node-type
+                           (beancount-ts-entries-in-region (point-min) (point-max)))))))
+
+(ert-deftest beancount-ts-sort/keeps-entries-inside-their-tag-scope ()
+  "Sorting never moves an entry across a pushtag or poptag line.
+Entries are sorted within each stretch between such lines, so the
+scope covers the same entries afterwards as before."
+  (skip-unless (treesit-ready-p 'beancount t))
+  (with-temp-buffer
+    (insert beancount-ts-scope-test--ledger)
+    (beancount-ts-mode)
+    (beancount-ts-sort-buffer)
+    (let ((names (let (acc)
+                   (goto-char (point-min))
+                   (while (re-search-forward "^\\(pushtag\\|poptag\\|[0-9-]+ \\* \"\\([a-z]+\\)\"\\)" nil t)
+                     (push (or (match-string 2) (match-string 1)) acc))
+                   (nreverse acc))))
+      (should (equal '("before" "pushtag" "flight" "hotel" "poptag" "groceries")
+                     names)))))
+
 ;;; beancount-ts-eglot-init-options
 
 (ert-deftest beancount-ts-eglot/init-options-expands-journal-file ()
