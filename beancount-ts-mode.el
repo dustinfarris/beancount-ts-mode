@@ -326,9 +326,14 @@ so a sort must not move an entry across one of these lines.")
   "Tree-sitter node types that form a top-level beancount entry.")
 
 (defconst beancount-ts--entry-query
-  (mapcar (lambda (type) (list (list (intern type)) '@entry))
-          beancount-ts-entry-node-types)
-  "Query capturing every named entry node, one pattern per type.")
+  (treesit-query-compile
+   'beancount
+   (mapcar (lambda (type) (list (list (intern type)) '@entry))
+           beancount-ts-entry-node-types))
+  "Query capturing every named entry node, one pattern per type.
+Compiled once here rather than on every capture; like the font-lock
+rules above, compilation is deferred until the grammar is loaded, so
+loading this file needs no grammar.")
 
 (defconst beancount-ts--entry-regexp
   (rx-to-string `(seq bos (or ,@beancount-ts-entry-node-types) eos) t)

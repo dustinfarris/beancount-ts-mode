@@ -367,6 +367,11 @@ its entry; the `defun' thing must still resolve to the whole entry."
     (treesit-beginning-of-thing 'transaction 1)
     (should (looking-at-p "2024-01-02 \\* \"P\""))))
 
+(ert-deftest beancount-ts-nav/entry-query-is-compiled-once ()
+  "The entry query is compiled at load, not rebuilt on every capture.
+Sort, region clear and refile all capture with it."
+  (should (treesit-compiled-query-p beancount-ts--entry-query)))
+
 (ert-deftest beancount-ts-nav/entries-in-region-in-order ()
   "Entries fully inside the region come back in buffer order, nothing else."
   (beancount-ts-test--in-headed-ledger
