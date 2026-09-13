@@ -101,20 +101,11 @@ ACCOUNT is like \"Liabilities:CapitalOne:QuicksilverVisa\".
 Returns a string like \"liabilities/capitalone/quicksilver-visa\".
 A second component listed in `beancount-ts-refile-entities' leads."
   (let* ((parts (split-string account ":"))
-         (account-type (car parts))
-         (rest (cdr parts))
-         path-parts)
-    (if (and rest (member (car rest) beancount-ts-refile-entities))
-        (let ((entity (car rest))
-              (remaining (cdr rest)))
-          (setq path-parts
-                (append (list (beancount-ts--camel-to-kebab entity)
-                              (beancount-ts--camel-to-kebab account-type))
-                        (mapcar #'beancount-ts--camel-to-kebab remaining))))
-      (setq path-parts
-            (cons (beancount-ts--camel-to-kebab account-type)
-                  (mapcar #'beancount-ts--camel-to-kebab rest))))
-    (string-join path-parts "/")))
+         ;; Hoist an entity first; the kebab mapping is the same either way.
+         (ordered (if (member (cadr parts) beancount-ts-refile-entities)
+                      (cons (cadr parts) (cons (car parts) (cddr parts)))
+                    parts)))
+    (string-join (mapcar #'beancount-ts--camel-to-kebab ordered) "/")))
 
 (defun beancount-ts--normalize-path-part (part)
   "Normalize path component PART for comparison.
