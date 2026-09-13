@@ -1,14 +1,36 @@
-;;; beancount-ts-mode.el --- Tree-sitter support for Beancount -*- lexical-binding: t -*-
+;;; beancount-ts-mode.el --- Tree-sitter major mode for Beancount -*- lexical-binding: t -*-
 
-;; Author: Dustin Farris
+;; Copyright (C) 2026 Dustin Farris
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
+;; Author: Dustin Farris <dustin.farris@gmail.com>
+;; Version: 0.1.0
+;; Package-Requires: ((emacs "31.1"))
+;; URL: https://github.com/dustinfarris/beancount-ts-mode
 ;; Keywords: languages, beancount, tree-sitter
+
+;; This program is free software; you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+;;
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+;;
+;; You should have received a copy of the GNU General Public License
+;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
 ;; A major mode for editing Beancount files using tree-sitter for
-;; syntax highlighting and navigation.
+;; syntax highlighting, indentation and structural navigation, with
+;; commands to walk, clear, clone and sort transactions and an eglot
+;; entry for beancount-language-server.  `beancount-ts-refile' adds
+;; refiling of entries into per-account journal files.
 ;;
-;; Built on Emacs's own `treesit' (Emacs 29+), and shaped like the stock
+;; Built on Emacs's own `treesit' (Emacs 31+), and shaped like the stock
 ;; `*-ts-mode's: font-lock rules with a capture function for accounts,
 ;; `treesit-thing-settings' for entry and posting motion, imenu and
 ;; outline from the tree, and `derived-mode-add-parents' so packages
