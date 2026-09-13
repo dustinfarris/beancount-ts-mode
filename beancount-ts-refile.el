@@ -397,10 +397,15 @@ interrupted refile fails towards a duplicate, never a loss."
           (list :source (current-buffer) :entries removed :targets extents))))
 
 (defun beancount-ts--source-p (relative root)
-  "Return non-nil when RELATIVE under ROOT is the file this buffer visits."
+  "Return non-nil when RELATIVE under ROOT is the file this buffer visits.
+Both sides are resolved through symlinks: `find-file-visit-truename'
+\(which Doom sets) makes `buffer-file-name' the real path while
+`beancount-ts-journal-file' may reach the journal through a link, and
+an entry already in its home file must be recognised as home either
+way, or it is cut and re-appended to the same buffer."
   (and buffer-file-name
-       (string= (expand-file-name buffer-file-name)
-                (expand-file-name relative root))))
+       (string= (file-truename buffer-file-name)
+                (file-truename (expand-file-name relative root)))))
 
 (defun beancount-ts--refile-single (entry)
   "Refile ENTRY, inferring its target or prompting when that is ambiguous."

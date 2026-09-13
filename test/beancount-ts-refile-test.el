@@ -1,6 +1,7 @@
 ;;; beancount-ts-refile-test.el --- Tests for beancount-ts-refile -*- lexical-binding: t; -*-
 
 (require 'ert)
+(require 'cl-lib)
 (require 'seq)
 (require 'subr-x)
 
@@ -466,6 +467,26 @@ target even after the source was edited, keeping that edit."
     (beancount-ts-refile-buffer)
     (beancount-ts-refile-test--undo)
     (should-error (beancount-ts-undo-last-refile) :type 'user-error)))
+
+
+;;; Source detection
+
+(ert-deftest beancount-ts-refile/source-p-sees-through-symlinks ()
+  "A journal root reached through a symlink still recognises its own files.
+Doom sets `find-file-visit-truename', so `buffer-file-name' is the real
+path while `beancount-ts-journal-file' may go through the link."
+  (let* ((real (file-name-as-directory (make-temp-file "beancount-ts-real" t)))
+         (link (concat (make-temp-file "beancount-ts-link") "-dir"))
+         (file (expand-file-name "inbox.beancount" real)))
+    (make-symbolic-link real link)
+    (with-temp-file file (insert ""))
+    (unwind-protect
+        (with-current-buffer (find-file-noselect file)
+          (should (beancount-ts--source-p "inbox.beancount"
+                                          (file-name-as-directory link)))
+          (kill-buffer))
+      (delete-file link)
+      (delete-directory real t))))
 
 (provide 'beancount-ts-refile-test)
 ;;; beancount-ts-refile-test.el ends here
