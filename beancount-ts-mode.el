@@ -450,39 +450,39 @@ account, and transactions by date, payee and narration."
 \\{beancount-ts-mode-map}"
   :group 'beancount-ts
   :syntax-table beancount-ts-mode-syntax-table
-  ;; A missing grammar is an error, not a silent bare mode: the stock
-  ;; `(when (and (treesit-ensure-installed ..) (treesit-ready-p ..)))'
-  ;; shape returns nil without a word when the install is declined or
-  ;; fails, and would leave a buffer labelled Beancount with no
-  ;; font-lock, indentation or navigation.  `treesit-ready-p' still
-  ;; gets its say afterwards; it warns on its own when it says no (an
-  ;; oversized buffer).
+  ;; Not being able to parse is an error, not a silent bare mode: the
+  ;; stock `(when (and (treesit-ensure-installed ..) (treesit-ready-p
+  ;; ..)))' shape returns nil without a word when the install is
+  ;; declined or fails, or the buffer is over `treesit-max-buffer-size',
+  ;; and would leave a buffer labelled Beancount with no font-lock,
+  ;; indentation or navigation.
   (unless (treesit-ensure-installed 'beancount)
     (error "Tree-sitter grammar for beancount is not available"))
-  (when (treesit-ready-p 'beancount)
-    (setq treesit-primary-parser (treesit-parser-create 'beancount))
-    ;; Comments.
-    (setq-local comment-start "; ")
-    (setq-local comment-end "")
-    ;; Font-lock.
-    (setq-local treesit-font-lock-settings beancount-ts--font-lock-settings)
-    (setq-local treesit-font-lock-feature-list beancount-ts--font-lock-feature-list)
-    ;; Indentation: posting lines indent to `beancount-ts-indent-offset'.
-    ;; Drives RET (electric-indent), TAB, and evil o/O (indent-according-to-mode).
-    (setq-local indent-line-function #'beancount-ts-indent-line)
-    ;; Structure: entries are defuns, postings are sentences.
-    (setq-local treesit-thing-settings beancount-ts--thing-settings)
-    (setq-local treesit-defun-name-function #'beancount-ts--defun-name)
-    (setq-local treesit-simple-imenu-settings beancount-ts--imenu-settings)
-    ;; Outline: org-style `*' headings, levelled by their stars.  Set
-    ;; before `treesit-major-mode-setup', which would otherwise derive an
-    ;; outline from the imenu settings.  The tree is no better here: a
-    ;; heading line starts where the previous entry's node ends, and
-    ;; `treesit-outline-level' resolves that boundary to the wrong
-    ;; `section', flattening nested headings.
-    (setq-local outline-regexp "[*]+")
-    (setq-local outline-level (lambda () (length (match-string 0))))
-    (treesit-major-mode-setup)))
+  (unless (treesit-ready-p 'beancount 'message)
+    (error "Tree-sitter cannot parse this buffer (see the warning above)"))
+  (setq treesit-primary-parser (treesit-parser-create 'beancount))
+  ;; Comments.
+  (setq-local comment-start "; ")
+  (setq-local comment-end "")
+  ;; Font-lock.
+  (setq-local treesit-font-lock-settings beancount-ts--font-lock-settings)
+  (setq-local treesit-font-lock-feature-list beancount-ts--font-lock-feature-list)
+  ;; Indentation: posting lines indent to `beancount-ts-indent-offset'.
+  ;; Drives RET (electric-indent), TAB, and evil o/O (indent-according-to-mode).
+  (setq-local indent-line-function #'beancount-ts-indent-line)
+  ;; Structure: entries are defuns, postings are sentences.
+  (setq-local treesit-thing-settings beancount-ts--thing-settings)
+  (setq-local treesit-defun-name-function #'beancount-ts--defun-name)
+  (setq-local treesit-simple-imenu-settings beancount-ts--imenu-settings)
+  ;; Outline: org-style `*' headings, levelled by their stars.  Set
+  ;; before `treesit-major-mode-setup', which would otherwise derive an
+  ;; outline from the imenu settings.  The tree is no better here: a
+  ;; heading line starts where the previous entry's node ends, and
+  ;; `treesit-outline-level' resolves that boundary to the wrong
+  ;; `section', flattening nested headings.
+  (setq-local outline-regexp "[*]+")
+  (setq-local outline-level (lambda () (length (match-string 0))))
+  (treesit-major-mode-setup))
 
 (derived-mode-add-parents 'beancount-ts-mode '(beancount-mode))
 

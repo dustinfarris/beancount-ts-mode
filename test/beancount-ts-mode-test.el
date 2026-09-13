@@ -713,5 +713,13 @@ upstream beancount-mode users registered for themselves."
                 (cadr (memq :initializationOptions (cdr entry)))))
     (should-not (assq 'beancount-mode eglot-server-programs))))
 
+(ert-deftest beancount-ts-mode/oversized-buffer-is-an-error ()
+  "A buffer `treesit-ready-p' refuses must not get a silent bare mode either."
+  (skip-unless (treesit-ready-p 'beancount t))
+  (let ((treesit-max-buffer-size 1))
+    (with-temp-buffer
+      (insert "2024-01-01 open Assets:Cash\n")
+      (should-error (beancount-ts-mode) :type 'error))))
+
 (provide 'beancount-ts-mode-test)
 ;;; beancount-ts-mode-test.el ends here
