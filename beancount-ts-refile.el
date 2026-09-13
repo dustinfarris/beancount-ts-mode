@@ -46,6 +46,11 @@ through `beancount-ts-prices-file'.  Account lifecycle directives
 \(open, close, commodity) are deliberately excluded: they belong to
 accounts.beancount rather than to a per-account journal.")
 
+(defun beancount-ts--refileable-p (node)
+  "Return non-nil when NODE is an entry the refiler handles."
+  (and (treesit-node-check node 'named)
+       (member (treesit-node-type node) beancount-ts--refileable-entry-types)))
+
 (defcustom beancount-ts-prices-file "prices.beancount"
   "Journal-relative file that price directives refile into.
 Price directives name a commodity rather than an account, so they
@@ -246,16 +251,11 @@ Return nil if ambiguous or no accounts resolve."
 
 (defun beancount-ts--entry-at-point ()
   "Return the refileable entry node containing point, or nil."
-  (treesit-parent-until
-   (treesit-node-at (point))
-   (lambda (n) (and (treesit-node-check n 'named)
-                    (member (treesit-node-type n)
-                            beancount-ts--refileable-entry-types)))))
+  (beancount-ts--enclosing-node #'beancount-ts--refileable-p))
 
 (defun beancount-ts--collect-entries-in-region (beg end)
   "Return the refileable entry nodes lying wholly between BEG and END."
-  (seq-filter (lambda (n) (member (treesit-node-type n)
-                                  beancount-ts--refileable-entry-types))
+  (seq-filter #'beancount-ts--refileable-p
               (beancount-ts-entries-in-region beg end)))
 
 (defun beancount-ts--list-journal-files (journal-root)

@@ -533,7 +533,7 @@ which switches its native flagged-entry scan off, rather than as
 
 (defun beancount-ts--transaction-at-point ()
   "Return the transaction node at point, or signal a `user-error'."
-  (or (treesit-parent-until (treesit-node-at (point)) 'transaction t)
+  (or (beancount-ts--enclosing-node 'transaction)
       (user-error "Not in a transaction")))
 
 (defun beancount-ts--marker-bounds (txn)
