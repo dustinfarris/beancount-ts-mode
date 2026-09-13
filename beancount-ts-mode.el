@@ -263,22 +263,30 @@ column 0.")
   "^[ \t]+[^ \t\n]"
   "Regexp matching an already-indented content line (posting or metadata).")
 
+(defconst beancount-ts--dated-line-re
+  (concat "^" beancount-ts--date-re)
+  "Regexp matching any dated directive line.")
+
 (defun beancount-ts--compute-indent ()
   "Return the column the current line should be indented to.
 Lines that begin a top-level directive sit at column 0.  Lines that
-continue a transaction -- because the previous non-blank line is a
-transaction header or is itself indented -- get
-`beancount-ts-indent-offset'."
+continue an entry get `beancount-ts-indent-offset': any line after a
+transaction header or an already-indented line, and a line with
+content after any other dated directive, which can only be that
+directive's metadata.  A blank line after such a directive stays at
+column 0, since a new entry is the likelier continuation there."
   (save-excursion
     (beginning-of-line)
     (cond
      ((looking-at-p beancount-ts--directive-line-re) 0)
-     ((save-excursion
-        (forward-line -1)
-        (while (and (not (bobp)) (looking-at-p "^[ \t]*$"))
-          (forward-line -1))
-        (or (looking-at-p beancount-ts--transaction-header-re)
-            (looking-at-p beancount-ts--indented-content-re)))
+     ((let ((content (looking-at-p "^[ \t]*[^ \t\n]")))
+        (save-excursion
+          (forward-line -1)
+          (while (and (not (bobp)) (looking-at-p "^[ \t]*$"))
+            (forward-line -1))
+          (or (looking-at-p beancount-ts--transaction-header-re)
+              (looking-at-p beancount-ts--indented-content-re)
+              (and content (looking-at-p beancount-ts--dated-line-re)))))
       beancount-ts-indent-offset)
      (t 0))))
 

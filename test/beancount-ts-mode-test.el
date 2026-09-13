@@ -55,6 +55,16 @@
   (should (= 0 (beancount-ts-test--indent-at
                 "2024-01-01 open Assets:Cash\n" 2))))
 
+(ert-deftest beancount-ts-indent/metadata-under-open-directive-indents ()
+  "A metadata line under open, balance or any dated directive is a
+continuation and indents, though a blank line after them does not."
+  (should (= 2 (beancount-ts-test--indent-at
+                "2024-01-01 open Assets:Cash\n  currency: \"USD\"\n" 2)))
+  (should (= 2 (beancount-ts-test--indent-at
+                "2024-01-01 balance Assets:Cash  1 USD\nnote: \"x\"\n" 2)))
+  (should (= 2 (beancount-ts-test--indent-at
+                "2024-01-01 open Assets:Cash\n  currency: \"USD\"\n  note: \"x\"\n" 3))))
+
 (ert-deftest beancount-ts-indent/org-heading-stays-at-zero ()
   "An org-style section heading sits at column 0."
   (should (= 0 (beancount-ts-test--indent-at "* Section\n" 1))))
