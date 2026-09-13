@@ -188,21 +188,21 @@ For example, with \"liabilities/chase.beancount\" and
   (or (beancount-ts--find-ancestor-file guess index)
       (beancount-ts--find-best-file-match guess index)))
 
+(defconst beancount-ts--posting-account-query
+  (treesit-query-compile 'beancount '((posting (account) @account)))
+  "Query capturing the account of every posting under a transaction.")
+
 (defun beancount-ts--entry-accounts (entry)
   "Return every account named by ENTRY, in document order.
 A transaction carries its accounts on postings; a balance directive
-carries one directly as its `account' field.  Other entry kinds name
-no account."
+carries one directly as its `account' field, and has no postings for
+the query to find.  Other entry kinds name no account."
   (if (equal (treesit-node-type entry) "balance")
       (when-let* ((account (beancount-ts--field-text entry "account")))
         (list account))
-    (let (accounts)
-      (dolist (child (treesit-node-children entry))
-        (when (equal (treesit-node-type child) "posting")
-          (dolist (pchild (treesit-node-children child))
-            (when (equal (treesit-node-type pchild) "account")
-              (push (treesit-node-text pchild t) accounts)))))
-      (nreverse accounts))))
+    (mapcar (lambda (node) (treesit-node-text node t))
+            (treesit-query-capture entry beancount-ts--posting-account-query
+                                   nil nil t))))
 
 (defun beancount-ts--relevant-accounts (entry)
   "Get accounts from ENTRY suitable for refile target inference.
