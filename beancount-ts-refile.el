@@ -119,33 +119,41 @@ Journal directories spell some multi-word account components solid
 both by rule.  Dropping hyphens lets either spelling resolve."
   (replace-regexp-in-string "-" "" (downcase part)))
 
-(defun beancount-ts--match-file (candidate all-files)
-  "Return the entry of ALL-FILES equal to CANDIDATE, ignoring hyphenation.
-Prefers an exact match; falls back to comparing normalized paths."
-  (or (car (member candidate all-files))
-      (let ((norm (beancount-ts--normalize-path-part candidate)))
-        (seq-find (lambda (f)
-                    (string= norm (beancount-ts--normalize-path-part f)))
-                  all-files))))
+(defun beancount-ts--file-index (files)
+  "Return FILES as the index the matchers take: (NORMALIZED . PATH) per file.
+Built once per refile, so each journal file is normalised once rather
+than on every lookup; inference looks a file up once per truncation
+step per account per entry.  Order is preserved, and every matcher
+returns the first hit in it.
 
-(defun beancount-ts--find-best-file-match (guess candidates)
-  "Find the best matching file from CANDIDATES for path GUESS.
-GUESS is like \"liabilities/capital-one/quicksilver-visa\".  CANDIDATES
-are relative paths, like
-\"liabilities/capitalone/quicksilver-visa.beancount\".
-Used as a fuzzy fallback for prompt defaults."
-  (or (beancount-ts--match-file (concat guess ".beancount") candidates)
+  (beancount-ts--file-index \\='(\"liabilities/quicksilver-visa.beancount\"))
+  => ((\"liabilities/quicksilvervisa.beancount\"
+       . \"liabilities/quicksilver-visa.beancount\"))"
+  (mapcar (lambda (file) (cons (beancount-ts--normalize-path-part file) file))
+          files))
+
+(defun beancount-ts--match-file (candidate index)
+  "Return the file in INDEX equal to CANDIDATE, ignoring hyphenation.
+Prefers an exact match; falls back to comparing normalized paths.
+INDEX is from `beancount-ts--file-index'."
+  (or (cdr (seq-find (lambda (entry) (string= candidate (cdr entry))) index))
+      (cdr (assoc (beancount-ts--normalize-path-part candidate) index))))
+
+(defun beancount-ts--find-best-file-match (guess index)
+  "Find the best matching file in INDEX for path GUESS.
+GUESS is like \"liabilities/capital-one/quicksilver-visa\"; INDEX is
+from `beancount-ts--file-index'.  Used as a fuzzy fallback for prompt
+defaults: the candidate sharing the longest run of leading path
+components wins, first in INDEX on a tie."
+  (or (beancount-ts--match-file (concat guess ".beancount") index)
       (let ((best nil)
             (best-score 0)
             (guess-parts (mapcar #'beancount-ts--normalize-path-part
                                  (split-string guess "/"))))
-        (dolist (cand candidates)
-          (let* ((cand-parts (mapcar #'beancount-ts--normalize-path-part
-                                     (split-string
-                                      (string-remove-suffix ".beancount" cand) "/")))
-                 (score 0)
-                 (g guess-parts)
-                 (c cand-parts))
+        (pcase-dolist (`(,normalized . ,cand) index)
+          (let ((score 0)
+                (g guess-parts)
+                (c (split-string (string-remove-suffix ".beancount" normalized) "/")))
             (while (and g c (equal (car g) (car c)))
               (setq score (1+ score))
               (setq g (cdr g))
@@ -155,8 +163,8 @@ Used as a fuzzy fallback for prompt defaults."
               (setq best-score score))))
         best)))
 
-(defun beancount-ts--find-ancestor-file (guess all-files)
-  "Find the closest ancestor file for path GUESS in ALL-FILES.
+(defun beancount-ts--find-ancestor-file (guess index)
+  "Find the closest ancestor file for path GUESS in INDEX.
 Try GUESS.beancount first, then progressively remove the last path
 component.  Stop when fewer than 2 components remain.
 Returns the matching relative path, or nil."
@@ -165,14 +173,14 @@ Returns the matching relative path, or nil."
     (while (and (not result) (>= (length parts) 2))
       (let ((match (beancount-ts--match-file
                     (concat (string-join parts "/") ".beancount")
-                    all-files)))
+                    index)))
         (if match
             (setq result match)
           (setq parts (butlast parts)))))
     result))
 
-(defun beancount-ts--default-file-for (guess all-files)
-  "Return the file in ALL-FILES to offer as prompt default for path GUESS.
+(defun beancount-ts--default-file-for (guess index)
+  "Return the file in INDEX to offer as prompt default for path GUESS.
 The closest ancestor file comes first, the same choice inference
 makes, so a parent file is preferred to a sibling account's file that
 merely shares a longer prefix.  Only when no ancestor exists does the
@@ -181,8 +189,8 @@ fuzzy prefix scorer get a say.
 For example, with \"liabilities/chase.beancount\" and
 \"liabilities/chase/sapphire.beancount\" on disk, the guess
 \"liabilities/chase/ink-visa\" defaults to the former."
-  (or (beancount-ts--find-ancestor-file guess all-files)
-      (beancount-ts--find-best-file-match guess all-files)))
+  (or (beancount-ts--find-ancestor-file guess index)
+      (beancount-ts--find-best-file-match guess index)))
 
 (defun beancount-ts--entry-accounts (entry)
   "Return every account named by ENTRY, in document order.
@@ -214,8 +222,8 @@ ignore list governs both, so a journal with renamed roots or a
 narrowed list gets a default too."
   (car (beancount-ts--relevant-accounts entry)))
 
-(defun beancount-ts--infer-target-file (entry all-files)
-  "Infer the target journal file for ENTRY.
+(defun beancount-ts--infer-target-file (entry index)
+  "Infer the target journal file for ENTRY among the files in INDEX.
 A price directive names a commodity rather than an account, so it goes
 to `beancount-ts-prices-file' when that file exists.  Otherwise examine
 each relevant account, find the closest ancestor journal file, and
@@ -223,13 +231,14 @@ return the relative path if all matched accounts agree on one file.
 Accounts that don't resolve to any file are ignored.
 Return nil if ambiguous or no accounts resolve."
   (if (equal (treesit-node-type entry) "price")
-      (car (member beancount-ts-prices-file all-files))
+      (cdr (seq-find (lambda (entry) (string= beancount-ts-prices-file (cdr entry)))
+                     index))
     (let* ((accounts (beancount-ts--relevant-accounts entry))
            (matches (delq nil
                           (mapcar (lambda (acct)
                                     (beancount-ts--find-ancestor-file
                                      (beancount-ts--account-to-path-guess acct)
-                                     all-files))
+                                     index))
                                   accounts)))
            (unique (delete-dups (copy-sequence matches))))
       (when (= (length unique) 1)
@@ -429,7 +438,8 @@ way, or it is cut and re-appended to the same buffer."
   "Refile ENTRY, inferring its target or prompting when that is ambiguous."
   (let* ((root (beancount-ts--journal-root))
          (all-files (beancount-ts--list-journal-files root))
-         (inferred (beancount-ts--infer-target-file entry all-files))
+         (index (beancount-ts--file-index all-files))
+         (inferred (beancount-ts--infer-target-file entry index))
          (target
           (if (and inferred (not (beancount-ts--source-p inferred root)))
               inferred
@@ -439,7 +449,7 @@ way, or it is cut and re-appended to the same buffer."
                                 (and primary
                                      (beancount-ts--default-file-for
                                       (beancount-ts--account-to-path-guess primary)
-                                      all-files)))))
+                                      index)))))
               (completing-read "Refile entry to: " all-files nil t nil nil default)))))
     ;; `completing-read' answers "" to RET on an empty prompt whatever
     ;; REQUIRE-MATCH says; "" would expand to the journal root.
@@ -454,11 +464,11 @@ way, or it is cut and re-appended to the same buffer."
   "Refile ENTRIES whose target can be inferred; leave the rest in place."
   (unless entries (user-error "No entries found"))
   (let* ((root (beancount-ts--journal-root))
-         (all-files (beancount-ts--list-journal-files root))
+         (index (beancount-ts--file-index (beancount-ts--list-journal-files root)))
          (ambiguous 0)
          pairs)
     (dolist (entry entries)
-      (let ((target (beancount-ts--infer-target-file entry all-files)))
+      (let ((target (beancount-ts--infer-target-file entry index)))
         (cond ((null target) (setq ambiguous (1+ ambiguous)))
               ((beancount-ts--source-p target root)) ; already home
               (t (push (cons entry target) pairs)))))

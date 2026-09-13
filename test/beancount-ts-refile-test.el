@@ -23,6 +23,24 @@
   "Journal layout mirroring ~/accounting/journal, including the solid
 `capitalone'/`mastercard' directories that CamelCase splitting misses.")
 
+(defconst beancount-ts-refile-test--journal-index
+  (beancount-ts--file-index beancount-ts-refile-test--journal-files)
+  "The sample journal as the matcher takes it.")
+
+(ert-deftest beancount-ts-refile/index-normalises-each-file-once ()
+  "Lookups pay for normalising the candidate, never the journal files.
+Target inference looks a file up once per truncation step per
+account per entry, so normalising every journal file on every miss
+made a batch refile quadratic."
+  (let ((calls 0))
+    (cl-letf* ((normalize (symbol-function 'beancount-ts--normalize-path-part))
+               ((symbol-function 'beancount-ts--normalize-path-part)
+                (lambda (part) (setq calls (1+ calls)) (funcall normalize part))))
+      (dotimes (_ 50)
+        (beancount-ts--match-file "liabilities/nowhere/nothing.beancount"
+                                  beancount-ts-refile-test--journal-index))
+      (should (= calls 50)))))
+
 ;;; beancount-ts--account-to-path-guess
 
 (ert-deftest beancount-ts-refile/path-guess-splits-camel-case ()
@@ -51,48 +69,48 @@
   "An exactly-spelled guess resolves to its file."
   (should (equal (beancount-ts--find-ancestor-file
                   "liabilities/chase/prime-visa"
-                  beancount-ts-refile-test--journal-files)
+                  beancount-ts-refile-test--journal-index)
                  "liabilities/chase/prime-visa.beancount")))
 
 (ert-deftest beancount-ts-refile/ancestor-file-ignores-hyphenation ()
   "`CapitalOne' resolves to the solid `capitalone' directory on disk."
   (should (equal (beancount-ts--find-ancestor-file
                   "liabilities/capital-one/quicksilver-visa"
-                  beancount-ts-refile-test--journal-files)
+                  beancount-ts-refile-test--journal-index)
                  "liabilities/capitalone/quicksilver-visa.beancount")))
 
 (ert-deftest beancount-ts-refile/ancestor-file-ignores-hyphenation-under-entity ()
   "Hyphen-insensitivity also applies below a business entity directory."
   (should (equal (beancount-ts--find-ancestor-file
                   "consulting/liabilities/capital-one/spark-visa"
-                  beancount-ts-refile-test--journal-files)
+                  beancount-ts-refile-test--journal-index)
                  "consulting/liabilities/capitalone/spark-visa.beancount")))
 
 (ert-deftest beancount-ts-refile/ancestor-file-truncates-then-ignores-hyphenation ()
   "A sub-account walks up to `mastercard.beancount' despite the split."
   (should (equal (beancount-ts--find-ancestor-file
                   "liabilities/apple/master-card/monthly-installments"
-                  beancount-ts-refile-test--journal-files)
+                  beancount-ts-refile-test--journal-index)
                  "liabilities/apple/mastercard.beancount")))
 
 (ert-deftest beancount-ts-refile/ancestor-file-truncates-to-parent ()
   "A holding sub-account resolves to its parent account file."
   (should (equal (beancount-ts--find-ancestor-file
                   "assets/vanguard/dustin/roth-ira/vaigx"
-                  beancount-ts-refile-test--journal-files)
+                  beancount-ts-refile-test--journal-index)
                  "assets/vanguard/dustin/roth-ira.beancount")))
 
 (ert-deftest beancount-ts-refile/ancestor-file-unresolvable-is-nil ()
   "An account with no journal file resolves to nil, not a stray match."
   (should-not (beancount-ts--find-ancestor-file
                "liabilities/roundpoint/home-mortgage"
-               beancount-ts-refile-test--journal-files)))
+               beancount-ts-refile-test--journal-index)))
 
 (ert-deftest beancount-ts-refile/ancestor-file-stops-above-two-components ()
   "Truncation stops before a bare account-type root file."
   (should-not (beancount-ts--find-ancestor-file
                "prices/whatever"
-               beancount-ts-refile-test--journal-files)))
+               beancount-ts-refile-test--journal-index)))
 
 ;;; beancount-ts--find-best-file-match
 
@@ -100,7 +118,7 @@
   "The prompt default also tolerates solid directory spellings."
   (should (equal (beancount-ts--find-best-file-match
                   "liabilities/capital-one/quicksilver-visa"
-                  beancount-ts-refile-test--journal-files)
+                  beancount-ts-refile-test--journal-index)
                  "liabilities/capitalone/quicksilver-visa.beancount")))
 
 ;;; Saving
@@ -251,7 +269,7 @@ is no second, hardcoded allowlist of account roots."
   (beancount-ts-refile-test--in-ledger
     (should (equal (beancount-ts--infer-target-file
                     (beancount-ts-refile-test--entry-at "balance Assets:Chase")
-                    beancount-ts-refile-test--journal-files)
+                    beancount-ts-refile-test--journal-index)
                    "assets/chase/checking.beancount"))))
 
 (ert-deftest beancount-ts-refile/infer-target-of-price ()
@@ -259,7 +277,7 @@ is no second, hardcoded allowlist of account roots."
   (beancount-ts-refile-test--in-ledger
     (should (equal (beancount-ts--infer-target-file
                     (beancount-ts-refile-test--entry-at "price VASIX")
-                    beancount-ts-refile-test--journal-files)
+                    beancount-ts-refile-test--journal-index)
                    "prices.beancount"))))
 
 (ert-deftest beancount-ts-refile/infer-target-of-price-absent-file ()
@@ -267,14 +285,14 @@ is no second, hardcoded allowlist of account roots."
   (beancount-ts-refile-test--in-ledger
     (should-not (beancount-ts--infer-target-file
                  (beancount-ts-refile-test--entry-at "price VASIX")
-                 '("assets/chase/checking.beancount")))))
+                 (beancount-ts--file-index '("assets/chase/checking.beancount"))))))
 
 (ert-deftest beancount-ts-refile/infer-target-of-transaction ()
   "Transactions still infer from their non-expense postings."
   (beancount-ts-refile-test--in-ledger
     (should (equal (beancount-ts--infer-target-file
                     (beancount-ts-refile-test--entry-at "SAFEWAY")
-                    beancount-ts-refile-test--journal-files)
+                    beancount-ts-refile-test--journal-index)
                    "liabilities/capitalone/quicksilver-visa.beancount"))))
 
 (ert-deftest beancount-ts-refile/collect-adjacent-entries ()
@@ -519,15 +537,15 @@ the parent, as inference would choose, not the sibling that happens to
 share the longest prefix."
   (should (equal (beancount-ts--default-file-for
                   "liabilities/chase/ink-visa"
-                  '("liabilities/chase/sapphire.beancount"
-                    "liabilities/chase.beancount"))
+                  (beancount-ts--file-index '("liabilities/chase/sapphire.beancount"
+                                              "liabilities/chase.beancount")))
                  "liabilities/chase.beancount")))
 
 (ert-deftest beancount-ts-refile/prompt-default-falls-back-to-fuzzy-match ()
   "Without an ancestor file the closest spelling still serves as default."
   (should (equal (beancount-ts--default-file-for
                   "liabilities/chase/ink-visa"
-                  '("liabilities/chase/sapphire.beancount"))
+                  (beancount-ts--file-index '("liabilities/chase/sapphire.beancount")))
                  "liabilities/chase/sapphire.beancount")))
 
 (provide 'beancount-ts-refile-test)
