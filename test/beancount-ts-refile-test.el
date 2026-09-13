@@ -4,12 +4,7 @@
 (require 'cl-lib)
 (require 'seq)
 (require 'subr-x)
-
-(add-to-list 'load-path
-             (expand-file-name ".." (file-name-directory
-                                     (or load-file-name buffer-file-name))))
-(require 'beancount-ts-mode)
-(require 'beancount-ts-refile)
+(require 'beancount-ts-test-helper)
 
 (defconst beancount-ts-refile-test--journal-files
   '("assets/chase/checking.beancount"
@@ -184,14 +179,6 @@ so the refile must fail towards a duplicate, never towards a loss."
 
 ;;; Entry collection and inference (tree-sitter)
 
-;; Batch Emacs sees a bare `user-emacs-directory', so it never finds the
-;; grammar Doom installed under its own cache dir.  Mirrors the setup in
-;; `beancount-ts-mode-test.el'; the tests below skip themselves when the
-;; grammar is missing.
-(let ((dir (expand-file-name "~/.emacs.d/.local/cache/tree-sitter")))
-  (when (file-directory-p dir)
-    (add-to-list 'treesit-extra-load-path dir)))
-
 (defconst beancount-ts-refile-test--ledger
   (concat "2024-01-01 open Liabilities:CapitalOne:QuicksilverVisa\n"
           "\n"
@@ -204,17 +191,6 @@ so the refile must fail towards a duplicate, never towards a loss."
           "2024-01-04 price VASIX                     15.85 USD\n")
   "A ledger holding each entry kind the refiler must classify.")
 
-(defmacro beancount-ts-refile-test--in-ledger (&rest body)
-  "Run BODY in a `beancount-ts-mode' buffer holding the sample ledger."
-  (declare (indent 0))
-  `(progn
-     (skip-unless (treesit-ready-p 'beancount t))
-     (with-temp-buffer
-       (insert beancount-ts-refile-test--ledger)
-       (beancount-ts-mode)
-       (goto-char (point-min))
-       ,@body)))
-
 (defun beancount-ts-refile-test--entry-at (pattern)
   "Return the refileable entry node containing PATTERN in the buffer."
   (goto-char (point-min))
@@ -226,7 +202,7 @@ so the refile must fail towards a duplicate, never towards a loss."
 
 (ert-deftest beancount-ts-refile/collect-includes-balance-and-price ()
   "Buffer collection picks up balance and price directives, not just txns."
-  (beancount-ts-refile-test--in-ledger
+  (beancount-ts-test--in-buffer beancount-ts-refile-test--ledger
     (should (equal (mapcar #'treesit-node-type
                            (beancount-ts--collect-entries-in-region
                             (point-min) (point-max)))
@@ -234,7 +210,7 @@ so the refile must fail towards a duplicate, never towards a loss."
 
 (ert-deftest beancount-ts-refile/relevant-accounts-honour-ignored-prefixes ()
   "Every prefix in the ignore list is skipped, and only those."
-  (beancount-ts-refile-test--in-ledger
+  (beancount-ts-test--in-buffer beancount-ts-refile-test--ledger
     (let ((entry (beancount-ts-refile-test--entry-at "SAFEWAY"))
           (beancount-ts-refile-ignored-account-prefixes '("Liabilities:")))
       (should (equal (beancount-ts--relevant-accounts entry)
@@ -242,7 +218,7 @@ so the refile must fail towards a duplicate, never towards a loss."
 
 (ert-deftest beancount-ts-refile/relevant-accounts-default-skips-expenses ()
   "The default ignore list drops Expenses, so the card decides the target."
-  (beancount-ts-refile-test--in-ledger
+  (beancount-ts-test--in-buffer beancount-ts-refile-test--ledger
     (let ((entry (beancount-ts-refile-test--entry-at "SAFEWAY")))
       (should (equal (beancount-ts--relevant-accounts entry)
                      '("Liabilities:CapitalOne:QuicksilverVisa"))))))
@@ -251,7 +227,7 @@ so the refile must fail towards a duplicate, never towards a loss."
   "The prompt default comes from the same accounts inference uses.
 Narrow the ignore list and an expense account can be primary; there
 is no second, hardcoded allowlist of account roots."
-  (beancount-ts-refile-test--in-ledger
+  (beancount-ts-test--in-buffer beancount-ts-refile-test--ledger
     (let ((entry (beancount-ts-refile-test--entry-at "SAFEWAY"))
           (beancount-ts-refile-ignored-account-prefixes '("Liabilities:")))
       (should (equal (beancount-ts--primary-account entry)
@@ -259,14 +235,14 @@ is no second, hardcoded allowlist of account roots."
 
 (ert-deftest beancount-ts-refile/relevant-accounts-of-balance ()
   "A balance directive contributes its own account, not a posting's."
-  (beancount-ts-refile-test--in-ledger
+  (beancount-ts-test--in-buffer beancount-ts-refile-test--ledger
     (should (equal (beancount-ts--relevant-accounts
                     (beancount-ts-refile-test--entry-at "balance Assets:Chase"))
                    '("Assets:Chase:Checking")))))
 
 (ert-deftest beancount-ts-refile/infer-target-of-balance ()
   "A balance directive files to its account's journal file."
-  (beancount-ts-refile-test--in-ledger
+  (beancount-ts-test--in-buffer beancount-ts-refile-test--ledger
     (should (equal (beancount-ts--infer-target-file
                     (beancount-ts-refile-test--entry-at "balance Assets:Chase")
                     beancount-ts-refile-test--journal-index)
@@ -274,7 +250,7 @@ is no second, hardcoded allowlist of account roots."
 
 (ert-deftest beancount-ts-refile/infer-target-of-price ()
   "A price directive carries no account, so it files to the prices file."
-  (beancount-ts-refile-test--in-ledger
+  (beancount-ts-test--in-buffer beancount-ts-refile-test--ledger
     (should (equal (beancount-ts--infer-target-file
                     (beancount-ts-refile-test--entry-at "price VASIX")
                     beancount-ts-refile-test--journal-index)
@@ -282,14 +258,14 @@ is no second, hardcoded allowlist of account roots."
 
 (ert-deftest beancount-ts-refile/infer-target-of-price-absent-file ()
   "Without a prices file in the journal, a price stays put."
-  (beancount-ts-refile-test--in-ledger
+  (beancount-ts-test--in-buffer beancount-ts-refile-test--ledger
     (should-not (beancount-ts--infer-target-file
                  (beancount-ts-refile-test--entry-at "price VASIX")
                  (beancount-ts--file-index '("assets/chase/checking.beancount"))))))
 
 (ert-deftest beancount-ts-refile/infer-target-of-transaction ()
   "Transactions still infer from their non-expense postings."
-  (beancount-ts-refile-test--in-ledger
+  (beancount-ts-test--in-buffer beancount-ts-refile-test--ledger
     (should (equal (beancount-ts--infer-target-file
                     (beancount-ts-refile-test--entry-at "SAFEWAY")
                     beancount-ts-refile-test--journal-index)
@@ -312,7 +288,7 @@ directives are routinely written back-to-back."
 
 (ert-deftest beancount-ts-refile/collect-excludes-open-directive ()
   "Account lifecycle directives are not refiled; they live in accounts.beancount."
-  (beancount-ts-refile-test--in-ledger
+  (beancount-ts-test--in-buffer beancount-ts-refile-test--ledger
     (should-not (member "open"
                         (mapcar #'treesit-node-type
                                 (beancount-ts--collect-entries-in-region

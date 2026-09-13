@@ -4,15 +4,9 @@
 (require 'cl-lib)
 (require 'imenu)
 (require 'outline)
+(require 'beancount-ts-test-helper)
 
 (defvar eglot-server-programs)
-
-(defconst beancount-ts-test--package-directory
-  (expand-file-name ".." (file-name-directory (or load-file-name buffer-file-name)))
-  "The directory holding the package sources.")
-
-(add-to-list 'load-path beancount-ts-test--package-directory)
-(require 'beancount-ts-mode)
 
 (defun beancount-ts-test--indent-at (text line)
   "Return computed indent for LINE after inserting TEXT in a temp buffer."
@@ -93,15 +87,6 @@ the transaction."
 
 ;;; Structural navigation
 
-;; Batch Emacs sees a bare `user-emacs-directory', so it never finds the
-;; grammar Doom installed under its own cache dir. Add that dir when it
-;; exists; the tests below skip themselves when the grammar is missing, so
-;; `make test-el' stays green on a machine that never ran
-;; `treesit-install-language-grammar'.
-(let ((dir (expand-file-name "~/.emacs.d/.local/cache/tree-sitter")))
-  (when (file-directory-p dir)
-    (add-to-list 'treesit-extra-load-path dir)))
-
 (defconst beancount-ts-test--ledger
   (concat "option \"title\" \"Ledger\"\n"
           "\n"
@@ -116,24 +101,13 @@ the transaction."
           "  Expenses:Fun\n")
   "A ledger exercising directives, a cleared txn, and a pending txn.")
 
-(defmacro beancount-ts-test--in-ledger (&rest body)
-  "Run BODY in a `beancount-ts-mode' buffer holding the sample ledger."
-  (declare (indent 0))
-  `(progn
-     (skip-unless (treesit-ready-p 'beancount t))
-     (with-temp-buffer
-       (insert beancount-ts-test--ledger)
-       (beancount-ts-mode)
-       (goto-char (point-min))
-       ,@body)))
-
 (defun beancount-ts-test--text (bounds)
   "Return the buffer text spanned by BOUNDS, a (BEG . END) cons."
   (buffer-substring-no-properties (car bounds) (cdr bounds)))
 
 (ert-deftest beancount-ts-nav/bounds-of-transaction-from-posting ()
   "Point inside a posting yields the whole enclosing transaction."
-  (beancount-ts-test--in-ledger
+  (beancount-ts-test--in-buffer beancount-ts-test--ledger
     (search-forward "Expenses:Food")
     (let ((text (beancount-ts-test--text (beancount-ts-bounds-of-transaction))))
       (should (string-prefix-p "2024-01-02 * \"Payee\"" text))
@@ -142,13 +116,13 @@ the transaction."
 
 (ert-deftest beancount-ts-nav/bounds-of-transaction-nil-outside ()
   "A non-transaction directive has no transaction bounds."
-  (beancount-ts-test--in-ledger
+  (beancount-ts-test--in-buffer beancount-ts-test--ledger
     (search-forward "open Assets:Cash")
     (should-not (beancount-ts-bounds-of-transaction))))
 
 (ert-deftest beancount-ts-nav/inner-of-transaction-is-postings ()
   "The inner range covers the postings but not the header line."
-  (beancount-ts-test--in-ledger
+  (beancount-ts-test--in-buffer beancount-ts-test--ledger
     (search-forward "Expenses:Food")
     (let ((text (beancount-ts-test--text (beancount-ts-inner-of-transaction))))
       (should (string-prefix-p "Assets:Cash" (string-trim-left text)))
@@ -157,7 +131,7 @@ the transaction."
 
 (ert-deftest beancount-ts-nav/bounds-of-entry-covers-non-transactions ()
   "Entry bounds work on directives that are not transactions."
-  (beancount-ts-test--in-ledger
+  (beancount-ts-test--in-buffer beancount-ts-test--ledger
     (search-forward "open Assets:Cash")
     (should (equal "2024-01-01 open Assets:Cash"
                    (string-trim (beancount-ts-test--text
@@ -165,21 +139,21 @@ the transaction."
 
 (ert-deftest beancount-ts-nav/beginning-of-entry-moves-to-entry-start ()
   "`beginning-of-defun' lands on the start of the enclosing entry."
-  (beancount-ts-test--in-ledger
+  (beancount-ts-test--in-buffer beancount-ts-test--ledger
     (search-forward "Expenses:Food")
     (beginning-of-defun)
     (should (looking-at-p "2024-01-02 \\* \"Payee\""))))
 
 (ert-deftest beancount-ts-nav/beginning-of-entry-repeats-with-arg ()
   "A count moves back that many entries."
-  (beancount-ts-test--in-ledger
+  (beancount-ts-test--in-buffer beancount-ts-test--ledger
     (search-forward "Expenses:Fun")
     (beginning-of-defun 2)
     (should (looking-at-p "2024-01-02 \\* \"Payee\""))))
 
 (ert-deftest beancount-ts-nav/end-of-entry-moves-past-last-posting ()
   "`end-of-defun' lands after the final posting of the entry."
-  (beancount-ts-test--in-ledger
+  (beancount-ts-test--in-buffer beancount-ts-test--ledger
     (search-forward "2024-01-02")
     (end-of-defun)
     (should (string-match-p
@@ -188,14 +162,14 @@ the transaction."
 
 (ert-deftest beancount-ts-nav/mode-wires-defun-functions ()
   "The mode hands defun movement to tree-sitter's `defun' thing."
-  (beancount-ts-test--in-ledger
+  (beancount-ts-test--in-buffer beancount-ts-test--ledger
     (should (eq beginning-of-defun-function #'treesit-beginning-of-defun))
     (should (eq end-of-defun-function #'treesit-end-of-defun))))
 
 (ert-deftest beancount-ts-nav/defun-thing-selects-entry ()
   "`bounds-of-thing-at-point' resolves `defun' to the entry.
 This is what makes Meow's built-in `defun' thing (\\=`. d\\=') work."
-  (beancount-ts-test--in-ledger
+  (beancount-ts-test--in-buffer beancount-ts-test--ledger
     (search-forward "Expenses:Food")
     (let ((text (beancount-ts-test--text (bounds-of-thing-at-point 'defun))))
       (should (string-match-p "2024-01-02 \\* \"Payee\"" text))
@@ -225,27 +199,16 @@ This is what makes Meow's built-in `defun' thing (\\=`. d\\=') work."
           "2024-01-05 close Assets:Cash\n")
   "A ledger whose entries all sit under org-style headings.")
 
-(defmacro beancount-ts-test--in-headed-ledger (&rest body)
-  "Run BODY in a `beancount-ts-mode' buffer holding the headed ledger."
-  (declare (indent 0))
-  `(progn
-     (skip-unless (treesit-ready-p 'beancount t))
-     (with-temp-buffer
-       (insert beancount-ts-test--headed-ledger)
-       (beancount-ts-mode)
-       (goto-char (point-min))
-       ,@body)))
-
 (ert-deftest beancount-ts-nav/beginning-of-entry-under-heading ()
   "`beginning-of-defun' finds an entry nested inside a section."
-  (beancount-ts-test--in-headed-ledger
+  (beancount-ts-test--in-buffer beancount-ts-test--headed-ledger
     (search-forward "Expenses:X")
     (beginning-of-defun)
     (should (looking-at-p "2024-01-02 \\* \"P\""))))
 
 (ert-deftest beancount-ts-nav/defun-thing-under-heading ()
   "The `defun' thing resolves inside a section."
-  (beancount-ts-test--in-headed-ledger
+  (beancount-ts-test--in-buffer beancount-ts-test--headed-ledger
     (search-forward "Expenses:X")
     (let ((text (beancount-ts-test--text (bounds-of-thing-at-point 'defun))))
       (should (string-prefix-p "2024-01-02" text))
@@ -254,7 +217,7 @@ This is what makes Meow's built-in `defun' thing (\\=`. d\\=') work."
 
 (ert-deftest beancount-ts-nav/end-of-entry-under-heading ()
   "`end-of-defun' lands after the last posting of a nested entry."
-  (beancount-ts-test--in-headed-ledger
+  (beancount-ts-test--in-buffer beancount-ts-test--headed-ledger
     (search-forward "2024-01-02")
     (end-of-defun)
     (should (string-match-p
@@ -263,7 +226,7 @@ This is what makes Meow's built-in `defun' thing (\\=`. d\\=') work."
 
 (ert-deftest beancount-ts-nav/forward-sentence-walks-postings ()
   "A posting is a sentence: `forward-sentence' stops at its end."
-  (beancount-ts-test--in-headed-ledger
+  (beancount-ts-test--in-buffer beancount-ts-test--headed-ledger
     (search-forward "Assets:Cash  1 USD")
     (beginning-of-line)
     (let ((start (point)))
@@ -274,7 +237,7 @@ This is what makes Meow's built-in `defun' thing (\\=`. d\\=') work."
 (ert-deftest beancount-ts-nav/defun-thing-from-keyword ()
   "The keyword of a directive is an anonymous node of the same type as
 its entry; the `defun' thing must still resolve to the whole entry."
-  (beancount-ts-test--in-headed-ledger
+  (beancount-ts-test--in-buffer beancount-ts-test--headed-ledger
     (search-forward "open")
     (backward-char 2)
     (should (equal "2024-01-01 open Assets:Cash USD"
@@ -291,7 +254,7 @@ its entry; the `defun' thing must still resolve to the whole entry."
 
 (ert-deftest beancount-ts-font/account-components ()
   "Root, separator and sub-account get their own faces without jit-lock."
-  (beancount-ts-test--in-headed-ledger
+  (beancount-ts-test--in-buffer beancount-ts-test--headed-ledger
     (font-lock-ensure)
     (should (eq 'beancount-ts-account (beancount-ts-test--face-at "Assets:Cash  1")))
     (should (eq 'beancount-ts-account-separator
@@ -301,7 +264,7 @@ its entry; the `defun' thing must still resolve to the whole entry."
 
 (ert-deftest beancount-ts-font/directive-keyword-only ()
   "Only the keyword of a directive gets the directive face."
-  (beancount-ts-test--in-headed-ledger
+  (beancount-ts-test--in-buffer beancount-ts-test--headed-ledger
     (font-lock-ensure)
     (should (eq 'beancount-ts-directive (beancount-ts-test--face-at "open")))
     (should-not (beancount-ts-test--face-at " open"))
@@ -310,7 +273,7 @@ its entry; the `defun' thing must still resolve to the whole entry."
 
 (ert-deftest beancount-ts-font/transaction-flags ()
   "`*' is cleared, `!' is pending, `txn' is a keyword."
-  (beancount-ts-test--in-headed-ledger
+  (beancount-ts-test--in-buffer beancount-ts-test--headed-ledger
     (font-lock-ensure)
     (should (eq 'beancount-ts-flag-cleared (beancount-ts-test--face-at "* \"P\"")))
     (should (eq 'beancount-ts-flag-pending (beancount-ts-test--face-at "! \"Pending\"")))
@@ -318,7 +281,7 @@ its entry; the `defun' thing must still resolve to the whole entry."
 
 (ert-deftest beancount-ts-font/metadata ()
   "Metadata keys and bare values are fontified; string values stay strings."
-  (beancount-ts-test--in-headed-ledger
+  (beancount-ts-test--in-buffer beancount-ts-test--headed-ledger
     (font-lock-ensure)
     (should (eq 'beancount-ts-metadata-key (beancount-ts-test--face-at "flag:")))
     (should (eq 'font-lock-property-use-face (beancount-ts-test--face-at "TRUE")))
@@ -328,12 +291,12 @@ its entry; the `defun' thing must still resolve to the whole entry."
 
 (ert-deftest beancount-ts-mode/derives-from-beancount-mode ()
   "Packages keyed on `beancount-mode' see this mode as one."
-  (beancount-ts-test--in-headed-ledger
+  (beancount-ts-test--in-buffer beancount-ts-test--headed-ledger
     (should (derived-mode-p 'beancount-mode))))
 
 (ert-deftest beancount-ts-imenu/index-by-kind ()
   "Imenu lists sections, opened accounts and transactions."
-  (beancount-ts-test--in-headed-ledger
+  (beancount-ts-test--in-buffer beancount-ts-test--headed-ledger
     (let* ((index (funcall imenu-create-index-function))
            (names (lambda (kind) (mapcar #'car (cdr (assoc kind index)))))
            (sections (cdr (assoc "Section" index))))
@@ -349,7 +312,7 @@ its entry; the `defun' thing must still resolve to the whole entry."
 
 (ert-deftest beancount-ts-outline/level-from-nesting ()
   "Outline headings come from `section' nodes, levelled by nesting."
-  (beancount-ts-test--in-headed-ledger
+  (beancount-ts-test--in-buffer beancount-ts-test--headed-ledger
     (outline-next-heading)
     (should (looking-at-p "\\*\\* B"))
     (should (= 2 (funcall outline-level)))
@@ -359,7 +322,7 @@ its entry; the `defun' thing must still resolve to the whole entry."
 
 (ert-deftest beancount-ts-nav/transaction-thing-crosses-headings ()
   "`treesit-beginning-of-thing' on `transaction' walks into sections."
-  (beancount-ts-test--in-headed-ledger
+  (beancount-ts-test--in-buffer beancount-ts-test--headed-ledger
     (treesit-beginning-of-thing 'transaction -1)
     (should (looking-at-p "2024-01-02 \\* \"P\""))
     (treesit-beginning-of-thing 'transaction -1)
@@ -374,7 +337,7 @@ Sort, region clear and refile all capture with it."
 
 (ert-deftest beancount-ts-nav/entries-in-region-in-order ()
   "Entries fully inside the region come back in buffer order, nothing else."
-  (beancount-ts-test--in-headed-ledger
+  (beancount-ts-test--in-buffer beancount-ts-test--headed-ledger
     (let ((types (mapcar #'treesit-node-type
                          (beancount-ts-entries-in-region (point-min) (point-max)))))
       (should (equal '("open" "transaction" "transaction" "transaction" "close")
@@ -382,7 +345,7 @@ Sort, region clear and refile all capture with it."
 
 (ert-deftest beancount-ts-nav/entries-in-region-excludes-partial ()
   "An entry straddling the region edge is left out."
-  (beancount-ts-test--in-headed-ledger
+  (beancount-ts-test--in-buffer beancount-ts-test--headed-ledger
     (search-forward "Expenses:X")
     (let ((types (mapcar #'treesit-node-type
                          (beancount-ts-entries-in-region (point) (point-max)))))
@@ -390,7 +353,7 @@ Sort, region clear and refile all capture with it."
 
 (ert-deftest beancount-ts-nav/uncleared-transaction-thing ()
   "`uncleared-transaction' skips `*' and stops on `txn' and `!'."
-  (beancount-ts-test--in-headed-ledger
+  (beancount-ts-test--in-buffer beancount-ts-test--headed-ledger
     (treesit-beginning-of-thing 'uncleared-transaction -1)
     (should (looking-at-p "2024-01-03 txn"))
     (treesit-beginning-of-thing 'uncleared-transaction -1)
@@ -401,7 +364,7 @@ Sort, region clear and refile all capture with it."
 
 (ert-deftest beancount-ts-syntax/tags-and-links-are-symbols ()
   "`#' and `^' belong to the tag or link, so the symbol at point is whole."
-  (beancount-ts-test--in-headed-ledger
+  (beancount-ts-test--in-buffer beancount-ts-test--headed-ledger
     (erase-buffer)
     (insert "2024-01-01 * \"x\" #food ^receipt-1\n")
     (search-backward "#food")
@@ -435,24 +398,13 @@ Sort, region clear and refile all capture with it."
   "Out-of-order entries under headings, with a directive hard against
 a transaction and a comment: everything the sorter must not lose.")
 
-(defmacro beancount-ts-cmd-test--in-ledger (&rest body)
-  "Run BODY in a `beancount-ts-mode' buffer holding the command ledger."
-  (declare (indent 0))
-  `(progn
-     (skip-unless (treesit-ready-p 'beancount t))
-     (with-temp-buffer
-       (insert beancount-ts-cmd-test--ledger)
-       (beancount-ts-mode)
-       (goto-char (point-min))
-       ,@body)))
-
 (defun beancount-ts-cmd-test--line ()
   "Return the current line's text."
   (buffer-substring-no-properties (line-beginning-position) (line-end-position)))
 
 (ert-deftest beancount-ts-sort/orders-entries-by-date ()
   "Entries come out date-ascending."
-  (beancount-ts-cmd-test--in-ledger
+  (beancount-ts-test--in-buffer beancount-ts-cmd-test--ledger
     (beancount-ts-sort-buffer)
     (let ((dates (let (acc)
                    (goto-char (point-min))
@@ -463,20 +415,20 @@ a transaction and a comment: everything the sorter must not lose.")
 
 (ert-deftest beancount-ts-sort/keeps-directive-hard-against-transaction ()
   "A directive on the line right after a transaction survives the sort."
-  (beancount-ts-cmd-test--in-ledger
+  (beancount-ts-test--in-buffer beancount-ts-cmd-test--ledger
     (beancount-ts-sort-buffer)
     (should (string-match-p "^2024-01-01 balance Assets:Cash 0 USD$" (buffer-string)))))
 
 (ert-deftest beancount-ts-sort/keeps-comments-and-headings ()
   "Text that is not an entry stays where it was."
-  (beancount-ts-cmd-test--in-ledger
+  (beancount-ts-test--in-buffer beancount-ts-cmd-test--ledger
     (beancount-ts-sort-buffer)
     (should (string-prefix-p "* Imported\n; keep me\n" (buffer-string)))
     (should (string-match-p "^\\*\\* Later$" (buffer-string)))))
 
 (ert-deftest beancount-ts-sort/region-leaves-outside-alone ()
   "Only entries wholly inside the region move."
-  (beancount-ts-cmd-test--in-ledger
+  (beancount-ts-test--in-buffer beancount-ts-cmd-test--ledger
     (search-forward "** Later")
     (beancount-ts-sort-region (line-beginning-position) (point-max))
     (goto-char (point-min))
@@ -487,7 +439,7 @@ a transaction and a comment: everything the sorter must not lose.")
 
 (ert-deftest beancount-ts-nav/next-transaction-crosses-heading ()
   "`beancount-ts-next-transaction' skips directives and headings."
-  (beancount-ts-cmd-test--in-ledger
+  (beancount-ts-test--in-buffer beancount-ts-cmd-test--ledger
     (beancount-ts-next-transaction)
     (should (string-prefix-p "2024-01-03 *" (beancount-ts-cmd-test--line)))
     (beancount-ts-next-transaction)
@@ -495,7 +447,7 @@ a transaction and a comment: everything the sorter must not lose.")
 
 (ert-deftest beancount-ts-nav/transaction-motion-takes-count ()
   "A count moves that many transactions, in either direction."
-  (beancount-ts-cmd-test--in-ledger
+  (beancount-ts-test--in-buffer beancount-ts-cmd-test--ledger
     (beancount-ts-next-transaction 3)
     (should (string-prefix-p "2024-01-04 !" (beancount-ts-cmd-test--line)))
     (beancount-ts-prev-transaction 2)
@@ -503,7 +455,7 @@ a transaction and a comment: everything the sorter must not lose.")
 
 (ert-deftest beancount-ts-clear/sets-cleared-flag ()
   "Clearing rewrites `txn' and `!' markers to `*'."
-  (beancount-ts-cmd-test--in-ledger
+  (beancount-ts-test--in-buffer beancount-ts-cmd-test--ledger
     (search-forward "txn \"two\"")
     (beancount-ts-transaction-clear)
     (should (equal "2024-01-02 * \"two\"" (beancount-ts-cmd-test--line)))
@@ -513,7 +465,7 @@ a transaction and a comment: everything the sorter must not lose.")
 
 (ert-deftest beancount-ts-clear/prefix-sets-pending ()
   "With a prefix argument the marker becomes `!'."
-  (beancount-ts-cmd-test--in-ledger
+  (beancount-ts-test--in-buffer beancount-ts-cmd-test--ledger
     (search-forward "Assets:Cash  3")
     (beancount-ts-transaction-clear t)
     (forward-line -1)
@@ -521,7 +473,7 @@ a transaction and a comment: everything the sorter must not lose.")
 
 (ert-deftest beancount-ts-clear/outside-transaction-errors ()
   "Clearing a non-transaction directive is a `user-error'."
-  (beancount-ts-cmd-test--in-ledger
+  (beancount-ts-test--in-buffer beancount-ts-cmd-test--ledger
     (search-forward "balance")
     (should-error (beancount-ts-transaction-clear) :type 'user-error)))
 
@@ -530,7 +482,7 @@ a transaction and a comment: everything the sorter must not lose.")
 
 (ert-deftest beancount-ts-nav/next-uncleared-skips-cleared ()
   "`beancount-ts-next-uncleared-transaction' lands on `txn' and `!' only."
-  (beancount-ts-cmd-test--in-ledger
+  (beancount-ts-test--in-buffer beancount-ts-cmd-test--ledger
     (beancount-ts-next-uncleared-transaction)
     (should (string-prefix-p "2024-01-02 txn" (beancount-ts-cmd-test--line)))
     (beancount-ts-next-uncleared-transaction)
@@ -541,7 +493,7 @@ a transaction and a comment: everything the sorter must not lose.")
 
 (ert-deftest beancount-ts-nav/next-uncleared-takes-count ()
   "A count skips that many uncleared transactions."
-  (beancount-ts-cmd-test--in-ledger
+  (beancount-ts-test--in-buffer beancount-ts-cmd-test--ledger
     (beancount-ts-next-uncleared-transaction 2)
     (should (string-prefix-p "2024-01-04 !" (beancount-ts-cmd-test--line)))))
 
@@ -549,7 +501,7 @@ a transaction and a comment: everything the sorter must not lose.")
 
 (ert-deftest beancount-ts-clear/region-clears-every-transaction ()
   "With an active region every transaction inside it is cleared."
-  (beancount-ts-cmd-test--in-ledger
+  (beancount-ts-test--in-buffer beancount-ts-cmd-test--ledger
     (search-forward "** Later")
     (transient-mark-mode 1)
     (set-mark (line-beginning-position))
@@ -564,7 +516,7 @@ a transaction and a comment: everything the sorter must not lose.")
   "Clearing a selection must not hold tree-sitter nodes across its edits.
 A hook that touches the tree after each change makes every node from
 before the first edit outdated; the positions have to be taken first."
-  (beancount-ts-cmd-test--in-ledger
+  (beancount-ts-test--in-buffer beancount-ts-cmd-test--ledger
     (add-hook 'after-change-functions
               (lambda (&rest _) (treesit-buffer-root-node 'beancount))
               nil t)
