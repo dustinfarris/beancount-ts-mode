@@ -200,23 +200,19 @@ no account."
               (push (treesit-node-text pchild t) accounts)))))
       (nreverse accounts))))
 
-(defun beancount-ts--primary-account (entry)
-  "Extract the primary account from ENTRY, for the prompt default.
-Return the first Assets:, Liabilities:, or Income: account that
-`beancount-ts-refile-ignored-account-prefixes' does not exclude."
-  (seq-find (lambda (text)
-              (and (not (beancount-ts--ignored-account-p text))
-                   (or (string-prefix-p "Assets:" text)
-                       (string-prefix-p "Liabilities:" text)
-                       (string-prefix-p "Income:" text))))
-            (beancount-ts--entry-accounts entry)))
-
 (defun beancount-ts--relevant-accounts (entry)
   "Get accounts from ENTRY suitable for refile target inference.
 Accounts matching `beancount-ts-refile-ignored-account-prefixes' are
 dropped."
   (seq-remove #'beancount-ts--ignored-account-p
               (beancount-ts--entry-accounts entry)))
+
+(defun beancount-ts--primary-account (entry)
+  "Return the account of ENTRY the prompt default is guessed from.
+The first account inference would consider: the one configurable
+ignore list governs both, so a journal with renamed roots or a
+narrowed list gets a default too."
+  (car (beancount-ts--relevant-accounts entry)))
 
 (defun beancount-ts--infer-target-file (entry all-files)
   "Infer the target journal file for ENTRY.

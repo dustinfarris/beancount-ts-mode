@@ -229,6 +229,16 @@ so the refile must fail towards a duplicate, never towards a loss."
       (should (equal (beancount-ts--relevant-accounts entry)
                      '("Liabilities:CapitalOne:QuicksilverVisa"))))))
 
+(ert-deftest beancount-ts-refile/primary-account-follows-the-ignore-list ()
+  "The prompt default comes from the same accounts inference uses.
+Narrow the ignore list and an expense account can be primary; there
+is no second, hardcoded allowlist of account roots."
+  (beancount-ts-refile-test--in-ledger
+    (let ((entry (beancount-ts-refile-test--entry-at "SAFEWAY"))
+          (beancount-ts-refile-ignored-account-prefixes '("Liabilities:")))
+      (should (equal (beancount-ts--primary-account entry)
+                     "Expenses:Food:Groceries")))))
+
 (ert-deftest beancount-ts-refile/relevant-accounts-of-balance ()
   "A balance directive contributes its own account, not a posting's."
   (beancount-ts-refile-test--in-ledger
