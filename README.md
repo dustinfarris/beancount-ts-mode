@@ -21,7 +21,7 @@ A major mode for editing [Beancount](https://beancount.github.io/) files, built 
 
 ## Installation
 
-Not on MELPA yet. With Emacs 29+:
+Not on MELPA yet. With the built-in `package-vc`:
 
 ```elisp
 (package-vc-install "https://github.com/dustinfarris/beancount-ts-mode")
