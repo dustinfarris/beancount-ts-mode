@@ -664,17 +664,21 @@ read before any rewrite, so callers may edit freely afterwards."
 
 ;;; eglot
 
-;; The mode declares `beancount-mode' as a parent, and eglot matches
-;; entries with `provided-mode-derived-p', so one entry covers both
-;; this mode and beancount-mode itself.  The options are a function so
-;; `beancount-ts-journal-file' is read when the server starts, not when
-;; this file loads.
+;; Keyed on this mode, not on the `beancount-mode' it declares as a
+;; parent: `add-to-list' prepends and eglot takes the first entry whose
+;; mode matches, so an entry keyed on `beancount-mode' would sit ahead
+;; of whatever upstream beancount-mode users registered for themselves
+;; and hand them an init function that errors when
+;; `beancount-ts-journal-file' is nil.  The language id eglot derives
+;; is the same either way (it strips the `-ts' suffix).  The options
+;; are a function so the journal file is read when the server starts,
+;; not when this file loads.
 (defvar eglot-server-programs)
 (with-eval-after-load 'eglot
   (add-to-list 'eglot-server-programs
-               '(beancount-mode . ("beancount-language-server" "--stdio"
-                                   :initializationOptions
-                                   beancount-ts-eglot-init-options))))
+               '(beancount-ts-mode . ("beancount-language-server" "--stdio"
+                                      :initializationOptions
+                                      beancount-ts-eglot-init-options))))
 
 (provide 'beancount-ts-mode)
 ;;; beancount-ts-mode.el ends here

@@ -699,5 +699,19 @@ opens journals in `fundamental-mode' while the commands autoload fine."
                      text))))
       (when (file-exists-p loaddefs) (delete-file loaddefs)))))
 
+(ert-deftest beancount-ts-eglot/registers-server-for-this-mode-only ()
+  "Loading eglot after the mode leaves a `beancount-ts-mode' entry that
+hands the server `beancount-ts-eglot-init-options' for its options.
+The entry is not keyed on `beancount-mode': `add-to-list' prepends and
+eglot takes the first match, so an entry keyed there would shadow what
+upstream beancount-mode users registered for themselves."
+  (require 'eglot)
+  (let ((entry (assq 'beancount-ts-mode eglot-server-programs)))
+    (should entry)
+    (should (equal "beancount-language-server" (cadr entry)))
+    (should (eq 'beancount-ts-eglot-init-options
+                (cadr (memq :initializationOptions (cdr entry)))))
+    (should-not (assq 'beancount-mode eglot-server-programs))))
+
 (provide 'beancount-ts-mode-test)
 ;;; beancount-ts-mode-test.el ends here
