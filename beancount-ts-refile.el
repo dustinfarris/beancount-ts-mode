@@ -365,19 +365,28 @@ interrupted refile fails towards a duplicate, never a loss."
          (extents nil))
     (activate-change-group source-handle)
     (dolist (h target-handles) (activate-change-group h))
-    ;; Delete last first, so the earlier ranges keep their positions.
-    (dolist (range (reverse ranges))
-      (push (beancount-ts--delete-entry (car range) (cdr range)) removed))
-    ;; Append grouped by target, each group in buffer order.
-    (let (grouped)
-      (pcase-dolist (`(,target . ,text) texts)
-        (if-let* ((cell (assoc target grouped)))
-            (setcdr cell (append (cdr cell) (list text)))
-          (push (list target text) grouped)))
-      (pcase-dolist (`(,target . ,group) (nreverse grouped))
-        (push (beancount-ts--append-to-buffer
-               (find-file-noselect (expand-file-name target root)) group)
-              extents)))
+    ;; An error between the first cut and the last append would leave
+    ;; entries in no buffer; roll every buffer back instead.
+    (let ((done nil))
+      (unwind-protect
+          (progn
+            ;; Delete last first, so the earlier ranges keep their positions.
+            (dolist (range (reverse ranges))
+              (push (beancount-ts--delete-entry (car range) (cdr range)) removed))
+            ;; Append grouped by target, each group in buffer order.
+            (let (grouped)
+              (pcase-dolist (`(,target . ,text) texts)
+                (if-let* ((cell (assoc target grouped)))
+                    (setcdr cell (append (cdr cell) (list text)))
+                  (push (list target text) grouped)))
+              (pcase-dolist (`(,target . ,group) (nreverse grouped))
+                (push (beancount-ts--append-to-buffer
+                       (find-file-noselect (expand-file-name target root)) group)
+                      extents)))
+            (setq done t))
+        (unless done
+          (cancel-change-group source-handle)
+          (dolist (h target-handles) (cancel-change-group h)))))
     (setq extents (nreverse extents))
     ;; Top of the source's undo group: undo the targets first.
     (push (list 'apply #'beancount-ts--undo-refile-targets extents)
@@ -423,6 +432,10 @@ way, or it is cut and re-appended to the same buffer."
                                       (beancount-ts--account-to-path-guess primary)
                                       all-files)))))
               (completing-read "Refile entry to: " all-files nil t nil nil default)))))
+    ;; `completing-read' answers "" to RET on an empty prompt whatever
+    ;; REQUIRE-MATCH says; "" would expand to the journal root.
+    (unless (member target all-files)
+      (user-error "No target file chosen"))
     (when (beancount-ts--source-p target root)
       (user-error "Target file is the same as the source file"))
     (beancount-ts--refile-entries (list (cons entry target)))

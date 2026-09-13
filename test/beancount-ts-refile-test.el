@@ -488,5 +488,20 @@ path while `beancount-ts-journal-file' may go through the link."
       (delete-file link)
       (delete-directory real t))))
 
+;;; Prompting
+
+(ert-deftest beancount-ts-refile/empty-prompt-answer-refiles-nothing ()
+  "RET on an empty prompt is a refusal, not a refile into the journal root."
+  (beancount-ts-refile-test--with-journal
+    (let ((before (buffer-string)))
+      (search-forward "\"y\"")
+      (cl-letf (((symbol-function 'beancount-ts--infer-target-file)
+                 (lambda (&rest _) nil))
+                ((symbol-function 'completing-read)
+                 (lambda (&rest _) "")))
+        (should-error (beancount-ts-refile-transaction) :type 'user-error))
+      (should (equal before (buffer-string)))
+      (should-not (buffer-modified-p)))))
+
 (provide 'beancount-ts-refile-test)
 ;;; beancount-ts-refile-test.el ends here
