@@ -171,6 +171,19 @@ Returns the matching relative path, or nil."
           (setq parts (butlast parts)))))
     result))
 
+(defun beancount-ts--default-file-for (guess all-files)
+  "Return the file in ALL-FILES to offer as prompt default for path GUESS.
+The closest ancestor file comes first, the same choice inference
+makes, so a parent file is preferred to a sibling account's file that
+merely shares a longer prefix.  Only when no ancestor exists does the
+fuzzy prefix scorer get a say.
+
+For example, with \"liabilities/chase.beancount\" and
+\"liabilities/chase/sapphire.beancount\" on disk, the guess
+\"liabilities/chase/ink-visa\" defaults to the former."
+  (or (beancount-ts--find-ancestor-file guess all-files)
+      (beancount-ts--find-best-file-match guess all-files)))
+
 (defun beancount-ts--entry-accounts (entry)
   "Return every account named by ENTRY, in document order.
 A transaction carries its accounts on postings; a balance directive
@@ -428,7 +441,7 @@ way, or it is cut and re-appended to the same buffer."
             (let* ((primary (beancount-ts--primary-account entry))
                    (default (or inferred
                                 (and primary
-                                     (beancount-ts--find-best-file-match
+                                     (beancount-ts--default-file-for
                                       (beancount-ts--account-to-path-guess primary)
                                       all-files)))))
               (completing-read "Refile entry to: " all-files nil t nil nil default)))))

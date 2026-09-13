@@ -503,5 +503,22 @@ path while `beancount-ts-journal-file' may go through the link."
       (should (equal before (buffer-string)))
       (should-not (buffer-modified-p)))))
 
+(ert-deftest beancount-ts-refile/prompt-default-prefers-the-ancestor-file ()
+  "With a parent file and a sibling's file both present, the default is
+the parent, as inference would choose, not the sibling that happens to
+share the longest prefix."
+  (should (equal (beancount-ts--default-file-for
+                  "liabilities/chase/ink-visa"
+                  '("liabilities/chase/sapphire.beancount"
+                    "liabilities/chase.beancount"))
+                 "liabilities/chase.beancount")))
+
+(ert-deftest beancount-ts-refile/prompt-default-falls-back-to-fuzzy-match ()
+  "Without an ancestor file the closest spelling still serves as default."
+  (should (equal (beancount-ts--default-file-for
+                  "liabilities/chase/ink-visa"
+                  '("liabilities/chase/sapphire.beancount"))
+                 "liabilities/chase/sapphire.beancount")))
+
 (provide 'beancount-ts-refile-test)
 ;;; beancount-ts-refile-test.el ends here
