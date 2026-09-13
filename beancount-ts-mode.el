@@ -39,8 +39,6 @@
 ;;; Code:
 
 (require 'treesit)
-(require 'seq)
-(require 'cl-lib)
 
 (add-to-list 'treesit-language-source-alist
              '(beancount "https://github.com/polarmutex/tree-sitter-beancount" "v2.5.1"))

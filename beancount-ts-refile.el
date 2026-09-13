@@ -27,7 +27,6 @@
 ;;; Code:
 
 (require 'beancount-ts-mode)
-(require 'seq)
 (require 'subr-x)
 
 ;;; Refiling
