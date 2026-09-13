@@ -256,8 +256,10 @@ Such lines (dates, push/pop keywords, org-style `*' headings) sit at
 column 0.")
 
 (defconst beancount-ts--transaction-header-re
-  (concat "^" beancount-ts--date-re "[ \t]+\\(?:[*!]\\|txn\\_>\\)")
-  "Regexp matching a transaction header line (date followed by a flag).")
+  (concat "^" beancount-ts--date-re "[ \t]+\\(?:[*!&#?%PSTCURM]\\|txn\\_>\\)\\(?:[ \t]\\|$\\)")
+  "Regexp matching a transaction header line: a date, then a flag.
+The flag is `txn' or any single character Beancount accepts there,
+not only `*' and `!': importers emit P, S and T, and pad emits P.")
 
 (defconst beancount-ts--indented-content-re
   "^[ \t]+[^ \t\n]"

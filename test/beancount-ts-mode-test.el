@@ -65,6 +65,14 @@ continuation and indents, though a blank line after them does not."
   (should (= 2 (beancount-ts-test--indent-at
                 "2024-01-01 open Assets:Cash\n  currency: \"USD\"\n  note: \"x\"\n" 3))))
 
+(ert-deftest beancount-ts-indent/blank-line-after-any-flag-indents ()
+  "Every flag Beancount accepts heads a transaction, not only * and !.
+Importers emit P, S and T; a fresh line after any of them continues
+the transaction."
+  (dolist (flag '("P" "S" "T" "C" "U" "R" "M" "#" "&" "?" "%"))
+    (should (= 2 (beancount-ts-test--indent-at
+                  (format "2024-01-01 %s \"x\"\n" flag) 2)))))
+
 (ert-deftest beancount-ts-indent/org-heading-stays-at-zero ()
   "An org-style section heading sits at column 0."
   (should (= 0 (beancount-ts-test--indent-at "* Section\n" 1))))
