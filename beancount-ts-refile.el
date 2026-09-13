@@ -33,8 +33,10 @@
 ;;; Refiling
 
 (defvar beancount-ts--last-refile nil
-  "Info about the last refile for multi-buffer undo.
-Plist with :source SOURCE-BUFFER and :targets (TARGET-BUFFER ...).")
+  "What the last refile moved, for `beancount-ts-undo-last-refile'.
+A plist: :source is the source buffer, :entries the (MARKER . TEXT)
+pairs of what was cut from it, and :targets the extents appended to
+the target buffers, as `beancount-ts--append-to-buffer' returns them.")
 
 (defconst beancount-ts--refileable-entry-types
   '("transaction" "balance" "price")
@@ -243,29 +245,33 @@ Return nil if ambiguous or no accounts resolve."
   (mapcar (lambda (f) (file-relative-name f journal-root))
           (directory-files-recursively journal-root "\\.beancount\\'")))
 
-(defun beancount-ts--delete-entry (entry)
-  "Delete ENTRY from the current buffer.
-Also consume one trailing blank line if present."
-  (let ((start (treesit-node-start entry))
-        (end (treesit-node-end entry)))
-    (save-excursion
-      (goto-char end)
-      (when (looking-at-p "\n")
-        (setq end (1+ end))))
-    (delete-region start end)))
+(defun beancount-ts--delete-entry (start end)
+  "Delete the entry spanning START to END from the current buffer.
+Also consume one trailing blank line if present.  Return (MARKER
+. TEXT): where the entry was, and exactly what was removed, so it can
+be put back."
+  (save-excursion
+    (goto-char end)
+    (when (looking-at-p "\n")
+      (setq end (1+ end))))
+  (let ((text (buffer-substring start end)))
+    (delete-region start end)
+    (cons (copy-marker start) text)))
 
-(defun beancount-ts--append-to-file (target-path texts)
-  "Append entry TEXTS to the file at TARGET-PATH.
-Ensure a blank line separator before the first inserted entry.
+(defun beancount-ts--append-to-buffer (target-buf texts)
+  "Append entry TEXTS to TARGET-BUF, blank-line separated from what is there.
+Return the extent (TARGET-BUF START END) of everything inserted, as
+markers, so an undo can remove exactly that and nothing typed since.
 Does not save the buffer; caller is responsible for saving."
-  (let ((target-buf (find-file-noselect target-path)))
-    (with-current-buffer target-buf
-      (goto-char (point-max))
+  (with-current-buffer target-buf
+    (goto-char (point-max))
+    (let ((start (point-marker)))
       (unless (or (= (point) (point-min))
                   (looking-back "\n\n" (max (point-min) (- (point) 2))))
         (insert "\n"))
       (dolist (text texts)
-        (insert text "\n")))))
+        (insert text "\n"))
+      (list target-buf start (point-marker)))))
 
 (defun beancount-ts--save-buffers (buffers)
   "Save BUFFERS, returning an alist of (BUFFER . ERROR) for those that failed.
@@ -295,14 +301,43 @@ towards a harmless duplicate rather than towards a loss."
        (buffer-name source-buf)))
     (with-current-buffer source-buf (save-buffer))))
 
-(defun beancount-ts--undo-refile-targets (target-bufs)
-  "Undo refile appends in TARGET-BUFS.
-Called automatically via `buffer-undo-list' during undo."
-  (dolist (buf target-bufs)
-    (when (buffer-live-p buf)
-      (with-current-buffer buf
-        (undo))))
+(defun beancount-ts--undo-refile-targets (extents)
+  "Remove the refiled text from the target buffers, EXTENTS by extent.
+EXTENTS are (BUFFER START END) as `beancount-ts--append-to-buffer'
+returns them.  Runs as an `apply' entry in the source's undo list, so
+it records its own inverse there and a redo re-appends the text.
+Refuses when a target buffer has been killed: restoring the source
+while the file keeps the entries would duplicate them on disk."
+  (dolist (extent extents)
+    (unless (buffer-live-p (car extent))
+      (user-error "Cannot undo the refile: the buffer for %s was killed"
+                  (file-name-nondirectory
+                   (or (buffer-file-name (car extent)) "a target")))))
+  (let ((removed (mapcar (lambda (extent)
+                           (pcase-let ((`(,buf ,start ,end) extent))
+                             (with-current-buffer buf
+                               (prog1 (list buf start (buffer-substring start end))
+                                 (delete-region start end)))))
+                         extents)))
+    (push (list 'apply #'beancount-ts--redo-refile-targets removed)
+          buffer-undo-list))
   (setq beancount-ts--last-refile nil))
+
+(defun beancount-ts--redo-refile-targets (removed)
+  "Put refiled text back into the target buffers after an undo.
+REMOVED is what `beancount-ts--undo-refile-targets' took out: (BUFFER
+MARKER TEXT) per target.  Records the inverse so the pair can be
+undone and redone indefinitely."
+  (let ((extents (mapcar (lambda (item)
+                           (pcase-let ((`(,buf ,marker ,text) item))
+                             (with-current-buffer buf
+                               (goto-char marker)
+                               (let ((start (point-marker)))
+                                 (insert text)
+                                 (list buf start (point-marker))))))
+                         removed)))
+    (push (list 'apply #'beancount-ts--undo-refile-targets extents)
+          buffer-undo-list)))
 
 (defun beancount-ts--refile-entries (pairs)
   "Move each (ENTRY . TARGET) in PAIRS from the current buffer into TARGET.
@@ -314,17 +349,25 @@ interrupted refile fails towards a duplicate, never a loss."
          (texts (mapcar (lambda (pair)
                           (cons (cdr pair) (treesit-node-text (car pair) t)))
                         pairs))
+         ;; Positions before any edit: a node is not safe to ask once
+         ;; the buffer changes under it.
+         (ranges (mapcar (lambda (pair)
+                          (cons (treesit-node-start (car pair))
+                                (treesit-node-end (car pair))))
+                        pairs))
          (target-bufs (delete-dups
                        (mapcar (lambda (pair)
                                  (find-file-noselect (expand-file-name (cdr pair) root)))
                                pairs)))
          (source-handle (prepare-change-group))
-         (target-handles (mapcar #'prepare-change-group target-bufs)))
+         (target-handles (mapcar #'prepare-change-group target-bufs))
+         (removed nil)
+         (extents nil))
     (activate-change-group source-handle)
     (dolist (h target-handles) (activate-change-group h))
-    ;; Delete last first, so the earlier nodes keep their positions.
-    (dolist (pair (reverse pairs))
-      (beancount-ts--delete-entry (car pair)))
+    ;; Delete last first, so the earlier ranges keep their positions.
+    (dolist (range (reverse ranges))
+      (push (beancount-ts--delete-entry (car range) (cdr range)) removed))
     ;; Append grouped by target, each group in buffer order.
     (let (grouped)
       (pcase-dolist (`(,target . ,text) texts)
@@ -332,9 +375,12 @@ interrupted refile fails towards a duplicate, never a loss."
             (setcdr cell (append (cdr cell) (list text)))
           (push (list target text) grouped)))
       (pcase-dolist (`(,target . ,group) (nreverse grouped))
-        (beancount-ts--append-to-file (expand-file-name target root) group)))
+        (push (beancount-ts--append-to-buffer
+               (find-file-noselect (expand-file-name target root)) group)
+              extents)))
+    (setq extents (nreverse extents))
     ;; Top of the source's undo group: undo the targets first.
-    (push (list 'apply #'beancount-ts--undo-refile-targets target-bufs)
+    (push (list 'apply #'beancount-ts--undo-refile-targets extents)
           buffer-undo-list)
     (accept-change-group source-handle)
     (undo-amalgamate-change-group source-handle)
@@ -348,7 +394,7 @@ interrupted refile fails towards a duplicate, never a loss."
       (with-current-buffer buf (undo-boundary)))
     (beancount-ts--commit-refile (current-buffer) target-bufs)
     (setq beancount-ts--last-refile
-          (list :source (current-buffer) :targets target-bufs))))
+          (list :source (current-buffer) :entries removed :targets extents))))
 
 (defun beancount-ts--source-p (relative root)
   "Return non-nil when RELATIVE under ROOT is the file this buffer visits."
@@ -433,23 +479,26 @@ in place with a summary message."
 
 ;;;###autoload
 (defun beancount-ts-undo-last-refile ()
-  "Undo the last refile across all affected buffers.
-Reverts the source and target buffers to their pre-refile state."
+  "Put the entries of the last refile back where they were cut from.
+The appended text leaves the targets and the entries return to their
+places in the source, whatever has been edited since: this is not an
+undo of the newest change but a reversal of that one refile.  A plain
+`undo' in the source right after the refile does the same."
   (interactive)
   (unless beancount-ts--last-refile
     (user-error "No refile to undo"))
   (let ((source (plist-get beancount-ts--last-refile :source))
+        (entries (plist-get beancount-ts--last-refile :entries))
         (targets (plist-get beancount-ts--last-refile :targets)))
-    ;; Undo in target buffers first (remove appended transactions)
-    (dolist (buf targets)
-      (when (buffer-live-p buf)
-        (with-current-buffer buf
-          (undo))))
-    ;; Undo in source buffer (restore deleted transactions)
-    (when (buffer-live-p source)
-      (with-current-buffer source
-        (undo)))
-    (setq beancount-ts--last-refile nil)
+    (unless (buffer-live-p source)
+      (user-error "Cannot undo the refile: the source buffer was killed"))
+    (with-current-buffer source
+      (undo-boundary)
+      (beancount-ts--undo-refile-targets targets)
+      (pcase-dolist (`(,marker . ,text) entries)
+        (goto-char marker)
+        (insert text))
+      (undo-boundary))
     (message "Undid last refile")))
 
 

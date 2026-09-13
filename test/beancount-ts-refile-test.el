@@ -372,5 +372,100 @@ and `inbox.beancount' as the source, visited in the current buffer.
       (should (equal before (buffer-string)))
       (should-not (string-match-p "\"y\"" (beancount-ts-refile-test--target-text))))))
 
+
+(defun beancount-ts-refile-test--undo ()
+  "Undo one step the way the command loop would, starting a fresh chain.
+The command loop closes each command with a boundary; batch code must."
+  (let ((last-command 'ignore))
+    (undo)
+    (undo-boundary)))
+
+(defun beancount-ts-refile-test--undo-more ()
+  "Undo the next step of a chain the previous `undo' began."
+  (let ((last-command 'undo))
+    (undo)
+    (undo-boundary)))
+
+(ert-deftest beancount-ts-refile/two-refiles-into-one-target-undo-twice ()
+  "Two refiles into the same file undo one after the other, no recursion.
+Undoing the second must not re-run the first's undo entry, which used
+to recurse until the Lisp stack overflowed."
+  (beancount-ts-refile-test--with-journal
+    (let ((before (buffer-string)))
+      (search-forward "\"y\"")
+      (beancount-ts-refile-transaction)
+      (goto-char (point-min))
+      (search-forward "\"x\"")
+      (beancount-ts-refile-transaction)
+      (beancount-ts-refile-test--undo)
+      (should (string-match-p "\"x\"" (buffer-string)))
+      (should-not (string-match-p "\"x\"" (beancount-ts-refile-test--target-text)))
+      (should (string-match-p "\"y\"" (beancount-ts-refile-test--target-text)))
+      (beancount-ts-refile-test--undo-more)
+      (should (equal before (buffer-string)))
+      (should-not (string-match-p "\"y\"" (beancount-ts-refile-test--target-text))))))
+
+(ert-deftest beancount-ts-refile/undo-removes-only-the-refiled-text ()
+  "A later edit in the target survives an undo of the refile."
+  (beancount-ts-refile-test--with-journal
+    (let ((before (buffer-string)))
+      (beancount-ts-refile-buffer)
+      (with-current-buffer (find-file-noselect
+                            (expand-file-name "assets/cash.beancount"
+                                              (file-name-directory beancount-ts-journal-file)))
+        (goto-char (point-max))
+        (insert "; a note typed after the refile\n"))
+      (beancount-ts-refile-test--undo)
+      (should (equal before (buffer-string)))
+      (let ((target (beancount-ts-refile-test--target-text)))
+        (should-not (string-match-p "\"x\"" target))
+        (should (string-match-p "a note typed after" target))))))
+
+(ert-deftest beancount-ts-refile/redo-puts-entries-back-in-the-target ()
+  "Redoing an undone refile re-appends to the target, so the entries
+never exist in no buffer at all."
+  (beancount-ts-refile-test--with-journal
+    (beancount-ts-refile-buffer)
+    (let ((refiled-source (buffer-string))
+          (refiled-target (beancount-ts-refile-test--target-text)))
+      (beancount-ts-refile-test--undo)
+      ;; A second fresh `undo' after a non-undo command is the redo.
+      (beancount-ts-refile-test--undo)
+      (should (equal refiled-source (buffer-string)))
+      (should (equal refiled-target (beancount-ts-refile-test--target-text))))))
+
+(ert-deftest beancount-ts-refile/undo-refuses-when-target-was-killed ()
+  "With the target buffer gone, undo refuses rather than duplicating.
+Restoring the source while the target file keeps the entries would put
+them in two places on disk."
+  (beancount-ts-refile-test--with-journal
+    (beancount-ts-refile-buffer)
+    (let ((after (buffer-string)))
+      (kill-buffer (find-file-noselect
+                    (expand-file-name "assets/cash.beancount"
+                                      (file-name-directory beancount-ts-journal-file))))
+      (should-error (beancount-ts-refile-test--undo) :type 'user-error)
+      (should (equal after (buffer-string))))))
+
+(ert-deftest beancount-ts-refile/undo-last-refile-survives-a-source-edit ()
+  "`beancount-ts-undo-last-refile' restores the entries and clears the
+target even after the source was edited, keeping that edit."
+  (beancount-ts-refile-test--with-journal
+    (beancount-ts-refile-buffer)
+    (goto-char (point-max))
+    (insert "; typed after the refile\n")
+    (beancount-ts-undo-last-refile)
+    (should (string-match-p "\"x\"" (buffer-string)))
+    (should (string-match-p "\"y\"" (buffer-string)))
+    (should (string-match-p "typed after the refile" (buffer-string)))
+    (should-not (string-match-p "\"x\"" (beancount-ts-refile-test--target-text)))))
+
+(ert-deftest beancount-ts-refile/undo-last-refile-after-undo-is-refused ()
+  "Once the refile was undone by plain undo there is nothing left to undo."
+  (beancount-ts-refile-test--with-journal
+    (beancount-ts-refile-buffer)
+    (beancount-ts-refile-test--undo)
+    (should-error (beancount-ts-undo-last-refile) :type 'user-error)))
+
 (provide 'beancount-ts-refile-test)
 ;;; beancount-ts-refile-test.el ends here
