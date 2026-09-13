@@ -357,14 +357,31 @@ undone and redone indefinitely."
     (push (list 'apply #'beancount-ts--undo-refile-targets extents)
           buffer-undo-list)))
 
-(defun beancount-ts--refile-entries (pairs)
+(defun beancount-ts--group-by-target (pairs)
+  "Group the texts of PAIRS by target, keeping both orders.
+PAIRS are (TARGET . TEXT); the result is one (TARGET TEXT...) per
+distinct target, targets in order of first appearance and texts in
+their original order.
+
+  (beancount-ts--group-by-target
+   \\='((\"a.beancount\" . \"x\") (\"b.beancount\" . \"y\") (\"a.beancount\" . \"z\")))
+  => ((\"a.beancount\" \"x\" \"z\") (\"b.beancount\" \"y\"))"
+  (let (grouped)
+    (pcase-dolist (`(,target . ,text) pairs)
+      (if-let* ((cell (assoc target grouped)))
+          (push text (cdr cell))
+        (push (list target text) grouped)))
+    (mapcar (lambda (cell) (cons (car cell) (nreverse (cdr cell))))
+            (nreverse grouped))))
+
+(defun beancount-ts--refile-entries (pairs root)
   "Move each (ENTRY . TARGET) in PAIRS from the current buffer into TARGET.
-ENTRY is a node in this buffer, TARGET a journal-relative path.
-Every affected buffer gets one undo step, and undoing in the source
-also undoes the targets.  Targets are saved before the source so an
-interrupted refile fails towards a duplicate, never a loss."
-  (let* ((root (beancount-ts--journal-root))
-         (texts (mapcar (lambda (pair)
+ENTRY is a node in this buffer, TARGET a path relative to ROOT, the
+journal directory.  Every affected buffer gets one undo step, and
+undoing in the source also undoes the targets.  Targets are saved
+before the source so an interrupted refile fails towards a duplicate,
+never a loss."
+  (let* ((texts (mapcar (lambda (pair)
                           (cons (cdr pair) (treesit-node-text (car pair) t)))
                         pairs))
          ;; Positions before any edit: a node is not safe to ask once
@@ -373,10 +390,12 @@ interrupted refile fails towards a duplicate, never a loss."
                           (cons (treesit-node-start (car pair))
                                 (treesit-node-end (car pair))))
                         pairs))
-         (target-bufs (delete-dups
-                       (mapcar (lambda (pair)
-                                 (find-file-noselect (expand-file-name (cdr pair) root)))
-                               pairs)))
+         ;; One buffer per distinct target, in order of first appearance.
+         (groups (mapcar (lambda (group)
+                           (cons (find-file-noselect (expand-file-name (car group) root))
+                                 (cdr group)))
+                         (beancount-ts--group-by-target texts)))
+         (target-bufs (mapcar #'car groups))
          (source-handle (prepare-change-group))
          (target-handles (mapcar #'prepare-change-group target-bufs))
          (removed nil)
@@ -392,15 +411,8 @@ interrupted refile fails towards a duplicate, never a loss."
             (dolist (range (reverse ranges))
               (push (beancount-ts--delete-entry (car range) (cdr range)) removed))
             ;; Append grouped by target, each group in buffer order.
-            (let (grouped)
-              (pcase-dolist (`(,target . ,text) texts)
-                (if-let* ((cell (assoc target grouped)))
-                    (setcdr cell (append (cdr cell) (list text)))
-                  (push (list target text) grouped)))
-              (pcase-dolist (`(,target . ,group) (nreverse grouped))
-                (push (beancount-ts--append-to-buffer
-                       (find-file-noselect (expand-file-name target root)) group)
-                      extents)))
+            (pcase-dolist (`(,buf . ,group) groups)
+              (push (beancount-ts--append-to-buffer buf group) extents))
             (setq done t))
         (unless done
           (cancel-change-group source-handle)
@@ -457,7 +469,7 @@ way, or it is cut and re-appended to the same buffer."
       (user-error "No target file chosen"))
     (when (beancount-ts--source-p target root)
       (user-error "Target file is the same as the source file"))
-    (beancount-ts--refile-entries (list (cons entry target)))
+    (beancount-ts--refile-entries (list (cons entry target)) root)
     (message "Refiled entry to %s" target)))
 
 (defun beancount-ts--refile-batch (entries)
@@ -479,7 +491,7 @@ way, or it is cut and re-appended to the same buffer."
      ((null pairs)
       (message "No entries to refile"))
      (t
-      (beancount-ts--refile-entries pairs)
+      (beancount-ts--refile-entries pairs root)
       (let ((n (length pairs)))
         (if (> ambiguous 0)
             (message "Refiled %d entr%s; %d ambiguous entr%s could not be refiled"

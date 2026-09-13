@@ -497,6 +497,17 @@ target even after the source was edited, keeping that edit."
     (should-error (beancount-ts-undo-last-refile) :type 'user-error)))
 
 
+(ert-deftest beancount-ts-refile/batch-opens-each-target-once ()
+  "A batch into one target visits that file once, not once per entry."
+  (beancount-ts-refile-test--with-journal
+    (let ((opens 0))
+      (cl-letf* ((open (symbol-function 'find-file-noselect))
+                 ((symbol-function 'find-file-noselect)
+                  (lambda (&rest args) (setq opens (1+ opens)) (apply open args))))
+        (beancount-ts-refile-buffer))
+      (should (= opens 1))
+      (should (string-match-p "\"y\"" (beancount-ts-refile-test--target-text))))))
+
 ;;; Source detection
 
 (ert-deftest beancount-ts-refile/source-p-sees-through-symlinks ()
