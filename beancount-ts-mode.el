@@ -623,5 +623,19 @@ Undated entries (option, include, ...) hold their slot."
                (delete-region (car slot) (cdr slot))
                (insert text)))))
 
+;;; eglot
+
+;; The mode declares `beancount-mode' as a parent, and eglot matches
+;; entries with `provided-mode-derived-p', so one entry covers both
+;; this mode and beancount-mode itself.  The options are a function so
+;; `beancount-ts-journal-file' is read when the server starts, not when
+;; this file loads.
+(defvar eglot-server-programs)
+(with-eval-after-load 'eglot
+  (add-to-list 'eglot-server-programs
+               '(beancount-mode . ("beancount-language-server" "--stdio"
+                                   :initializationOptions
+                                   beancount-ts-eglot-init-options))))
+
 (provide 'beancount-ts-mode)
 ;;; beancount-ts-mode.el ends here

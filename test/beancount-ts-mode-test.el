@@ -5,6 +5,8 @@
 (require 'imenu)
 (require 'outline)
 
+(defvar eglot-server-programs)
+
 (add-to-list 'load-path
              (expand-file-name ".." (file-name-directory
                                      (or load-file-name buffer-file-name))))
@@ -601,6 +603,16 @@ native scan is switched off."
   "A nil journal file is reported plainly rather than expanded."
   (let ((beancount-ts-journal-file nil))
     (should-error (beancount-ts-eglot-init-options nil) :type 'user-error)))
+
+(ert-deftest beancount-ts-eglot/registers-server-for-beancount-mode ()
+  "Loading eglot after the mode leaves a `beancount-mode' entry that
+hands the server `beancount-ts-eglot-init-options' for its options."
+  (require 'eglot)
+  (let ((entry (assq 'beancount-mode eglot-server-programs)))
+    (should entry)
+    (should (equal "beancount-language-server" (cadr entry)))
+    (should (eq 'beancount-ts-eglot-init-options
+                (cadr (memq :initializationOptions (cdr entry)))))))
 
 (provide 'beancount-ts-mode-test)
 ;;; beancount-ts-mode-test.el ends here
